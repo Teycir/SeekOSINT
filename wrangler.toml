@@ -11,3 +11,11 @@ id = "9848ade51876441085062de12d3531a5"
 binding = "DB"
 database_name = "seek-osint"
 database_id = "7229602c-e1a3-440e-82f8-1b7912eed83a"
+
+# ── Cron triggers ────────────────────────────────────────────────────────────
+# Daily re-query of all saved targets at 03:00 UTC.
+# The cron worker lives in worker/cron.ts and is deployed separately
+# via `wrangler deploy --config wrangler.cron.toml` (see that file).
+# Kept here as documentation; Pages Functions don't support cron directly.
+# [triggers]
+# crons = ["0 3 * * *"]

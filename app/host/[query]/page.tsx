@@ -11,8 +11,12 @@ import { parseQuery } from '../../../lib/validate'
 import { runLookup } from '../../../worker/lookup'
 import type { Env, HostResult, SourceResult } from '../../../lib/types'
 import { ExportButton } from '../../components/ExportButton'
+import { CopyButton } from '../../components/CopyButton'
+import { ShareButton } from '../../components/ShareButton'
+import { SaveButton } from '../../components/SaveButton'
+import { CveDrawerList } from '../../components/CveDrawer'
 
-// ─── Data fetching — direct call, no HTTP round-trip ─────────────────────────
+// ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function fetchResult(rawQuery: string, forceRefresh = false): Promise<HostResult | null> {
   try {
@@ -26,7 +30,7 @@ async function fetchResult(rawQuery: string, forceRefresh = false): Promise<Host
   }
 }
 
-// ─── Small UI primitives ──────────────────────────────────────────────────────
+// ─── UI primitives ────────────────────────────────────────────────────────────
 
 function Badge({
   label,
@@ -50,9 +54,7 @@ function Badge({
 }
 
 function SourceUnavailable({ source }: { source: string }) {
-  return (
-    <p className="text-xs text-neutral-600 italic">{source} unavailable</p>
-  )
+  return <p className="text-xs text-neutral-600 italic">{source} unavailable</p>
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -74,6 +76,16 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   )
 }
 
+/** Copyable monospace value — renders value + copy button inline */
+function Mono({ value }: { value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="font-mono">{value}</span>
+      <CopyButton value={value} />
+    </span>
+  )
+}
+
 function sourceOk<T>(r: SourceResult<T>): r is SourceResult<T> & { data: T } {
   return (r.status === 'ok' || r.status === 'cached') && r.data !== null
 }
@@ -86,27 +98,37 @@ function OverviewSection({ result }: { result: HostResult }) {
   const bgp = result.core.bgp
   return (
     <Card title="Overview">
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-3">
-        <div>
-          <dt className="text-xs text-neutral-500 uppercase tracking-wide">IP</dt>
-          <dd className="font-mono">{result.resolvedIP ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-neutral-500 uppercase tracking-wide">Domain</dt>
-          <dd className="font-mono">{result.resolvedDomain ?? '—'}</dd>
-        </div>
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+        {result.resolvedIP && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">IP</dt>
+            <dd><Mono value={result.resolvedIP} /></dd>
+          </div>
+        )}
+        {result.resolvedDomain && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Domain</dt>
+            <dd><Mono value={result.resolvedDomain} /></dd>
+          </div>
+        )}
         {sourceOk(geo) && (
           <>
             <div>
-              <dt className="text-xs text-neutral-500 uppercase tracking-wide">Location</dt>
-              <dd>{geo.data.city}, {geo.data.country}</dd>
+              <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Location</dt>
+              <dd className="inline-flex items-center gap-1">
+                {geo.data.city}, {geo.data.country}
+                <CopyButton value={`${geo.data.city}, ${geo.data.country}`} label="Copy location" />
+              </dd>
             </div>
             <div>
-              <dt className="text-xs text-neutral-500 uppercase tracking-wide">Org</dt>
-              <dd>{geo.data.org}</dd>
+              <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">ISP / Org</dt>
+              <dd className="inline-flex items-center gap-1">
+                <span>{geo.data.org}</span>
+                <CopyButton value={geo.data.org} label="Copy org" />
+              </dd>
             </div>
             <div>
-              <dt className="text-xs text-neutral-500 uppercase tracking-wide">Timezone</dt>
+              <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Timezone</dt>
               <dd>{geo.data.timezone}</dd>
             </div>
             <div className="flex gap-1 flex-wrap pt-1">
@@ -118,8 +140,8 @@ function OverviewSection({ result }: { result: HostResult }) {
         )}
         {sourceOk(bgp) && (
           <div>
-            <dt className="text-xs text-neutral-500 uppercase tracking-wide">ASN</dt>
-            <dd>AS{bgp.data.asn} — {bgp.data.name}</dd>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">ASN</dt>
+            <dd><Mono value={`AS${bgp.data.asn}`} /> <span className="text-neutral-500 text-xs">— {bgp.data.name}</span></dd>
           </div>
         )}
         {sourceOk(idb) && idb.data.tags.length > 0 && (
@@ -139,14 +161,21 @@ function PortsSection({ result }: { result: HostResult }) {
     <Card title={`Open ports (${idb.data.ports.length})`}>
       <div className="flex flex-wrap gap-2">
         {idb.data.ports.map(p => (
-          <span key={p} className="font-mono rounded bg-neutral-800 px-2 py-1 text-xs">{p}</span>
+          <span key={p} className="inline-flex items-center gap-0.5 font-mono rounded
+                                   bg-neutral-800 px-2 py-1 text-xs">
+            {p}
+            <CopyButton value={String(p)} label={`Copy port ${p}`} />
+          </span>
         ))}
       </div>
       {idb.data.cpes.length > 0 && (
-        <div className="mt-3 space-y-1">
+        <div className="mt-4 space-y-1.5">
           <p className="text-xs text-neutral-500 uppercase tracking-wide">CPEs</p>
           {idb.data.cpes.map(c => (
-            <p key={c} className="font-mono text-xs text-neutral-400">{c}</p>
+            <div key={c} className="inline-flex items-center gap-1">
+              <span className="font-mono text-xs text-neutral-400">{c}</span>
+              <CopyButton value={c} label="Copy CPE" />
+            </div>
           ))}
         </div>
       )}
@@ -156,35 +185,13 @@ function PortsSection({ result }: { result: HostResult }) {
 
 function VulnsSection({ result }: { result: HostResult }) {
   if (result.vulns.length === 0) return null
-  const severityVariant = (s?: string): 'danger' | 'warn' | 'ok' | 'default' => {
-    if (s === 'CRITICAL' || s === 'HIGH') return 'danger'
-    if (s === 'MEDIUM') return 'warn'
-    if (s === 'LOW' || s === 'NONE') return 'ok'
-    return 'default'
-  }
+  const okVulns = result.vulns
+    .filter(v => (v.status === 'ok' || v.status === 'cached') && v.data !== null)
+    .map(v => v.data!)
+  if (okVulns.length === 0) return null
   return (
-    <Card title={`Vulnerabilities (${result.vulns.length})`}>
-      <div className="space-y-3">
-        {result.vulns.map((v, i) => {
-          if (!sourceOk(v)) return <SourceUnavailable key={i} source={`CVE ${i}`} />
-          const cve = v.data
-          return (
-            <div key={cve.id} className="space-y-1 rounded-lg bg-neutral-800/50 px-3 py-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono font-semibold text-white">{cve.id}</span>
-                {cve.cvssV3Score !== undefined && (
-                  <Badge label={`CVSS ${cve.cvssV3Score}`} variant={severityVariant(cve.cvssV3Severity)} />
-                )}
-                {cve.cvssV3Severity && (
-                  <Badge label={cve.cvssV3Severity} variant={severityVariant(cve.cvssV3Severity)} />
-                )}
-                <Badge label={cve.source} variant="muted" />
-              </div>
-              <p className="text-xs text-neutral-400 leading-relaxed line-clamp-3">{cve.description}</p>
-            </div>
-          )
-        })}
-      </div>
+    <Card title={`Vulnerabilities (${okVulns.length})`}>
+      <CveDrawerList vulns={okVulns} />
     </Card>
   )
 }
@@ -196,9 +203,13 @@ function CertsSection({ result }: { result: HostResult }) {
     <Card title={`Certificates (${certs.data.length})`}>
       <div className="space-y-2 max-h-80 overflow-y-auto">
         {certs.data.slice(0, 50).map(c => (
-          <div key={c.id} className="font-mono text-xs text-neutral-400 border-b border-neutral-800 pb-1">
-            <span className="text-neutral-200">{c.commonName}</span>
-            <span className="ml-2 text-neutral-600">expires {c.notAfter.slice(0, 10)}</span>
+          <div key={c.id} className="flex items-center justify-between text-xs
+                                     border-b border-neutral-800 pb-1 gap-2">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="font-mono text-neutral-200 truncate">{c.commonName}</span>
+              <CopyButton value={c.commonName} label="Copy domain" />
+            </div>
+            <span className="text-neutral-600 shrink-0">expires {c.notAfter.slice(0, 10)}</span>
           </div>
         ))}
       </div>
@@ -226,9 +237,17 @@ function DNSSection({ result }: { result: HostResult }) {
           <tbody className="divide-y divide-neutral-800">
             {pdns.data.slice(0, 30).map((r, i) => (
               <tr key={i}>
-                <td className="py-1 pr-4 font-mono">{r.rrname}</td>
+                <td className="py-1 pr-4">
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    {r.rrname}<CopyButton value={r.rrname} />
+                  </span>
+                </td>
                 <td className="py-1 pr-4">{r.rrtype}</td>
-                <td className="py-1 pr-4 font-mono">{r.rdata}</td>
+                <td className="py-1 pr-4">
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    {r.rdata}<CopyButton value={r.rdata} />
+                  </span>
+                </td>
                 <td className="py-1">{new Date(r.time_last * 1000).toISOString().slice(0, 10)}</td>
               </tr>
             ))}
@@ -252,6 +271,16 @@ function ThreatSection({ result }: { result: HostResult }) {
           <div>
             <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">URLhaus</p>
             <Badge label={`${urlhaus.data.urls_count ?? 0} URLs found`} variant="danger" />
+            {urlhaus.data.urlhaus_reference && (
+              <a
+                href={urlhaus.data.urlhaus_reference}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-2 text-xs text-neon-red/60 hover:text-neon-red font-mono"
+              >
+                view ↗
+              </a>
+            )}
           </div>
         ) : (
           <p className="text-xs text-neutral-600">URLhaus — no results</p>
@@ -259,11 +288,18 @@ function ThreatSection({ result }: { result: HostResult }) {
         {sourceOk(threatfox) && threatfox.data.query_status === 'ok' && (threatfox.data.data?.length ?? 0) > 0 ? (
           <div>
             <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">ThreatFox IOCs</p>
-            {threatfox.data.data!.slice(0, 5).map(ioc => (
-              <div key={ioc.id} className="text-xs text-neutral-400">
-                {ioc.malware} — {ioc.threat_type} <Badge label={`${ioc.confidence_level}%`} variant="warn" />
-              </div>
-            ))}
+            <div className="space-y-1">
+              {threatfox.data.data!.slice(0, 5).map(ioc => (
+                <div key={ioc.id} className="flex items-center gap-2 text-xs text-neutral-400">
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    {ioc.ioc}<CopyButton value={ioc.ioc} label="Copy IOC" />
+                  </span>
+                  <span className="text-neutral-600">·</span>
+                  <span>{ioc.malware} — {ioc.threat_type}</span>
+                  <Badge label={`${ioc.confidence_level}%`} variant="warn" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="text-xs text-neutral-600">ThreatFox — no IOCs</p>
@@ -287,9 +323,20 @@ function BucketsSection({ result }: { result: HostResult }) {
       <div className="space-y-2">
         {buckets.data.map(b => (
           <div key={b.bucket} className="flex items-center justify-between text-xs">
-            <span className="font-mono text-neutral-200">{b.bucket}</span>
+            <span className="inline-flex items-center gap-1 font-mono text-neutral-200">
+              {b.bucket}
+              <CopyButton value={b.bucket} label="Copy bucket name" />
+            </span>
             <div className="flex items-center gap-2">
               <Badge label={b.provider.toUpperCase()} />
+              <a
+                href={b.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-neutral-500 hover:text-white font-mono transition-colors"
+              >
+                ↗
+              </a>
               <span className="text-neutral-500">{b.fileCount} files</span>
             </div>
           </div>
@@ -306,9 +353,16 @@ function WaybackSection({ result }: { result: HostResult }) {
     <Card title={`Web archive (${wb.data.length} snapshots)`}>
       <div className="space-y-1 max-h-60 overflow-y-auto">
         {wb.data.slice(0, 20).map((s, i) => (
-          <div key={i} className="flex justify-between text-xs font-mono">
-            <span className="text-neutral-400 truncate max-w-xs">{s.url}</span>
-            <span className="text-neutral-600 ml-2 shrink-0">{s.timestamp.slice(0, 8)}</span>
+          <div key={i} className="flex justify-between text-xs font-mono gap-2">
+            <a
+              href={`https://web.archive.org/web/${s.timestamp}/${s.url}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-neutral-400 hover:text-neon-red truncate max-w-xs transition-colors"
+            >
+              {s.url}
+            </a>
+            <span className="text-neutral-600 shrink-0">{s.timestamp.slice(0, 8)}</span>
           </div>
         ))}
       </div>
@@ -319,13 +373,13 @@ function WaybackSection({ result }: { result: HostResult }) {
 function MetaBar({ result }: { result: HostResult }) {
   const { meta } = result
   return (
-    <p className="text-xs text-neutral-600 text-right">
-      {meta.sourcesQueried} sources queried · {meta.cacheHits} cached · {meta.sourcesFailed} failed · {meta.durationMs}ms
+    <p className="text-xs text-neutral-600 text-right font-mono">
+      {meta.sourcesQueried} sources · {meta.cacheHits} cached · {meta.sourcesFailed} failed · {meta.durationMs}ms
     </p>
   )
 }
 
-// ─── Page — params is a Promise in Next 15+ ───────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HostPage({
   params,
@@ -343,12 +397,21 @@ export default async function HostPage({
   return (
     <main className="min-h-screen bg-neutral-950 px-4 py-10">
       <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-mono text-xl font-semibold text-white">{result.query.normalised}</h1>
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="font-mono text-xl font-semibold text-white truncate">
+                {result.query.normalised}
+              </h1>
+              <CopyButton value={result.query.normalised} label="Copy query" className="text-sm" />
+            </div>
             <p className="text-xs text-neutral-500 uppercase tracking-wide">{result.query.type}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+            <SaveButton query={result.query.normalised} />
+            <ShareButton query={result.query.normalised} />
             <ExportButton
               resultJson={JSON.stringify(result, null, 2)}
               filename={`seekosint-${result.query.normalised}.json`}
@@ -360,9 +423,12 @@ export default async function HostPage({
             >
               ↺ refresh
             </a>
-            <a href="/" className="text-sm text-neutral-500 hover:text-white">← New search</a>
+            <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">
+              ← back
+            </a>
           </div>
         </div>
+
         <OverviewSection result={result} />
         <PortsSection result={result} />
         <VulnsSection result={result} />

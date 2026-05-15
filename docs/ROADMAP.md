@@ -16,6 +16,14 @@
 | JSON export button | `0baa294` |
 | Recent searches on homepage | `78c50dc` |
 | Rate limit headers on all responses | `0baa294` |
+| Copy button on every data field | — |
+| Share button (clipboard + Web Share API) | — |
+| CVE detail drawer (inline NVD record expand) | — |
+| `POST /api/batch` — up to 20 queries, cost-aware rate limit | — |
+| `checkRateLimit` cost param (batch charges N slots atomically) | — |
+| Saved targets — `POST/GET /api/targets`, `DELETE /api/targets/:id` | — |
+| `SaveButton` component wired into results page header | — |
+| Daily cron scaffold — `worker/cron.ts` + `wrangler.cron.toml` | — |
 
 ---
 
@@ -44,25 +52,24 @@ A host with many CVEs blocks the entire response waiting for NVD's rate limit. U
 ## 🟢 Features users actually want
 
 ### Copy individual field values
-Right now you can export the whole result as JSON. You can't copy a single IP, ASN, or CVE ID without selecting text manually.
-
-- [ ] Copy button on every data field — one click copies the value. IP, ASN number, CVE ID, domain, certificate fingerprint. Tiny component, used constantly.
+- [x] Copy button on every data field — one click copies the value. IP, ASN number, CVE ID, domain, certificate fingerprint.
 
 ### Shareable result links
-- [ ] `/host/1.1.1.1` already works as a URL. Add an explicit share button that copies the link to clipboard. Users already share these — make it obvious.
+- [x] Share button — copies the `/host/<query>` URL; falls back to Web Share API on mobile.
 
 ### Saved targets + change alerts
-The `saved_targets` D1 table exists and is empty. This is the feature it was built for.
-
-- [ ] Save any host from the results page — one button, one D1 insert.
-- [ ] Daily Cloudflare Cron re-queries all saved targets and diffs the result against the previous lookup — new open ports, new CVEs, new threat feed hits, cert changes.
-- [ ] Email or webhook notification on change. Users monitoring infrastructure or tracking threat actors check back manually right now. This replaces that.
+- [x] Save any host from the results page — `SaveButton` → `POST /api/targets` → D1 upsert.
+- [x] `GET /api/targets` — list all saved targets.
+- [x] `DELETE /api/targets/:id` — remove a target.
+- [x] Daily cron — `worker/cron.ts` re-queries all targets, diffs ports/CVEs/threat hits, persists snapshot.
+- [ ] Email or webhook notification on change — `WEBHOOK_URL` env var wired, dispatch TODO behind flag.
 
 ### Batch lookup
-- [ ] Paste a list of IPs or domains, get results for all of them. `POST /api/batch`, max 20 queries, same rate limit applies per query. The most common SOC workflow — you have 15 suspicious IPs from a log and have to look them up one at a time right now.
+- [x] `POST /api/batch` — up to 20 queries, all in parallel, partial failures isolated per-item.
+- [x] Rate limit charges the full batch cost in one atomic KV write.
 
 ### CVE detail on click
-- [ ] Clicking a CVE ID opens a drawer with the full NVD record — description, CVSS score breakdown, affected versions, references. The data is already fetched in Layer 3. Right now it's buried in the JSON export.
+- [x] Clicking a CVE ID in the results page opens a drawer with description, CVSS scores, CWEs, references.
 
 ---
 
