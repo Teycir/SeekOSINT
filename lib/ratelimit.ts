@@ -23,6 +23,8 @@
  *   :open         – presence means breaker is open          (TTL = 15 min)
  */
 
+import { RATE_LIMIT, CIRCUIT_BREAKER } from './config'
+
 // ─── Log sanitization ─────────────────────────────────────────────────────────
 
 /**
@@ -41,9 +43,9 @@ export interface RateLimitResult {
   resetInSeconds: number
 }
 
-const RL_WINDOW_SECONDS = 3600          // 1-hour sliding window
-const RL_MAX_REQUESTS   = 100           // matches ROADMAP note
-const RL_KV_PREFIX      = 'rl:ip:'
+const RL_WINDOW_SECONDS = RATE_LIMIT.WINDOW_SECONDS
+const RL_MAX_REQUESTS   = RATE_LIMIT.MAX_REQUESTS
+const RL_KV_PREFIX      = RATE_LIMIT.KV_PREFIX
 
 /**
  * Check (and increment) the per-IP counter in KV.
@@ -92,11 +94,11 @@ export async function checkRateLimit(
 
 // ─── Circuit breaker ──────────────────────────────────────────────────────────
 
-const CB_KV_PREFIX          = 'cb:'
-const WINDOW_TTL_SECONDS    = 5  * 60   // 5-minute rolling window for ratio check
-const OPEN_TTL_SECONDS      = 15 * 60   // 15-minute cooldown before auto-recovery
-const TRIP_RATIO            = 0.5       // open when failures / requests > 50 %
-const MIN_REQUESTS_TO_TRIP  = 4         // need at least 4 requests before tripping
+const CB_KV_PREFIX          = CIRCUIT_BREAKER.KV_PREFIX
+const WINDOW_TTL_SECONDS    = CIRCUIT_BREAKER.WINDOW_TTL_SECONDS
+const OPEN_TTL_SECONDS      = CIRCUIT_BREAKER.OPEN_TTL_SECONDS
+const TRIP_RATIO            = CIRCUIT_BREAKER.TRIP_RATIO
+const MIN_REQUESTS_TO_TRIP  = CIRCUIT_BREAKER.MIN_REQUESTS_TO_TRIP
 
 export type BreakerState = 'closed' | 'open' | 'half-open'
 

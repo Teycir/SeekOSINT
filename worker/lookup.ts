@@ -51,6 +51,7 @@ import {
   fetchFeodo,
   fetchSSLBL,
 } from './sources/abusech'
+import { CVE as CVE_CONFIG, GHW as GHW_CONFIG } from '../lib/config'
 import { fetchCVEFull }       from './sources/nvd'
 import { fetchGHWForQuery }   from './sources/grayhatwarfare'
 import { fetchWayback }       from './sources/wayback'
@@ -128,7 +129,7 @@ export async function runLookup(
   const start = Date.now()
 
   // Key rings
-  const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GRAYHATWARFARE_API_KEY', 18)
+  const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GRAYHATWARFARE_API_KEY', GHW_CONFIG.KEY_COUNT)
   const ghwRing = new KeyRing(ghwKeys, env.KV, 'ghw')
 
   // ── Layers 1 + 2 run concurrently (each guarded by its circuit breaker) ──
@@ -164,8 +165,8 @@ export async function runLookup(
 
   // ── Layer 3: CVE enrichment — only if InternetDB found CVEs ──────────────
   const idbData = unwrap<InternetDBResult>(internetdbResult)
-  // Cap at 20 CVEs to avoid stampeding NVD with unbounded concurrent requests
-  const cveIds = (idbData?.vulns ?? []).slice(0, 20)
+  // Cap at configured max CVEs to avoid stampeding NVD with unbounded concurrent requests
+  const cveIds = (idbData?.vulns ?? []).slice(0, CVE_CONFIG.MAX_PER_LOOKUP)
 
   const vulns = await Promise.allSettled(
     cveIds.map(id =>
