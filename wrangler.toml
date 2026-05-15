@@ -1,0 +1,26 @@
+name = "seek-worker"
+main = "worker/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "5e136a469b414865b5028d8da4a7013a"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "seek-osint"
+database_id = "712fea52-ff39-4d2a-b877-3a612265f9a3"
+
+# Secrets — set with:
+#   wrangler secret put GHW_KEY_1   (repeat for _1 through _18)
+#   wrangler secret put NVD_KEY
+#   wrangler secret put ABUSECH_KEY
+
+[vars]
+# Non-sensitive vars only — all secrets go via `wrangler secret put`
+
+[[rules]]
+type = "ESModule"
+globs = ["**/*.ts"]

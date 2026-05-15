@@ -1,0 +1,157 @@
+/**
+ * lookup.ts — 4-layer execution orchestrator.
+ *
+ * Layer 1  always runs (Promise.allSettled — 7 sources)
+ * Layer 2  runs in parallel with Layer 1 (no dependency)
+ * Layer 3  fires only when InternetDB returns CVE IDs
+ * Layer 4  domain queries only (GHW); Wayback always runs for domains
+ *
+ * Non-blocking D1 persistence via ctx.waitUntil().
+ */
+import type {
+  BucketResult,
+  CVEDetail,
+  Env,
+  HostResult,
+  InternetDBResult,
+  LookupQuery,
+  SourceResult,
+} from '../lib/types'
+import { KeyRing } from '../lib/keyring'
+import { mergeResults } from '../lib/merge'
+import { skipped, unwrap } from '../lib/results'
+import { collectSecrets } from '../lib/validate'
+
+import { fetchInternetDB } from './sources/internetdb'
+import { fetchIPAPI }      from './sources/ipapi'
+import { fetchBGPView }    from './sources/bgpview'
+import { fetchRDAP }       from './sources/rdap'
+import { fetchCRTSH }      from './sources/crtsh'
+import { fetchPassiveDNS } from './sources/passivedns'
+import { fetchRobtex }     from './sources/robtex'
+import {
+  fetchURLhaus,
+  fetchThreatFox,
+  fetchMalwareBazaar,
+  fetchFeodo,
+  fetchSSLBL,
+} from './sources/abusech'
+import { fetchCVEFull }       from './sources/nvd'
+import { fetchGHWForQuery }   from './sources/grayhatwarfare'
+import { fetchWayback }       from './sources/wayback'
+
+// ─── D1 persistence ───────────────────────────────────────────────────────────
+
+async function persistSearch(
+  query: LookupQuery,
+  result: HostResult,
+  db: D1Database,
+): Promise<void> {
+  try {
+    await db.prepare(
+      `INSERT INTO searches (query, query_type, result_json, duration_ms)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(
+        query.normalised,
+        query.type,
+        JSON.stringify(result),
+        result.meta.durationMs,
+      )
+      .run()
+  } catch (err) {
+    // Non-critical — log and continue
+    console.error('[persist] D1 write failed', err)
+  }
+}
+
+// ─── Main orchestrator ────────────────────────────────────────────────────────
+
+export async function runLookup(
+  query: LookupQuery,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<HostResult> {
+  const start = Date.now()
+
+  // Key rings
+  const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GHW_KEY', 18)
+  const ghwRing = new KeyRing(ghwKeys, env.KV, 'ghw')
+
+  // ── Layers 1 + 2 run concurrently ────────────────────────────────────────
+  const [
+    // Layer 1
+    internetdbResult,
+    geoResult,
+    bgpResult,
+    rdapResult,
+    certsResult,
+    passivednsResult,
+    robtexResult,
+    // Layer 2
+    urlhausResult,
+    threatfoxResult,
+    malwarebazaarResult,
+    feodoResult,
+    sslblResult,
+  ] = await Promise.allSettled([
+    fetchInternetDB(query, env.KV),
+    fetchIPAPI(query, env.KV),
+    fetchBGPView(query, env.KV),
+    fetchRDAP(query, env.KV),
+    fetchCRTSH(query, env.KV),
+    fetchPassiveDNS(query, env.KV),
+    fetchRobtex(query, env.KV),
+    fetchURLhaus(query, env.KV, env.ABUSECH_KEY),
+    fetchThreatFox(query, env.KV, env.ABUSECH_KEY),
+    fetchMalwareBazaar(query, env.KV, env.ABUSECH_KEY),
+    fetchFeodo(query, env.KV),
+    fetchSSLBL(query, env.KV),
+  ])
+
+  // ── Layer 3: CVE enrichment — only if InternetDB found CVEs ──────────────
+  const idbData = unwrap<InternetDBResult>(internetdbResult)
+  const cveIds = idbData?.vulns ?? []
+
+  const vulns = await Promise.allSettled(
+    cveIds.map(id => fetchCVEFull(id, env.KV, env.NVD_KEY)),
+  ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
+
+  // ── Layer 4: Bucket recon + Wayback — domain queries only ────────────────
+  const [bucketsResult, waybackResult] = await Promise.allSettled([
+    fetchGHWForQuery(query, env.KV, ghwRing),
+    fetchWayback(query, env.KV),
+  ])
+
+  // ── Merge & return ────────────────────────────────────────────────────────
+  const result = mergeResults({
+    query,
+    core: {
+      internetdb: internetdbResult,
+      geo:        geoResult,
+      bgp:        bgpResult,
+      rdap:       rdapResult,
+      certs:      certsResult,
+      passivedns: passivednsResult,
+      robtex:     robtexResult,
+    },
+    threat: {
+      urlhaus:       urlhausResult,
+      threatfox:     threatfoxResult,
+      malwarebazaar: malwarebazaarResult,
+      feodo:         feodoResult,
+      sslbl:         sslblResult,
+    },
+    vulns,
+    recon: {
+      buckets: bucketsResult,
+      wayback: waybackResult,
+    },
+    durationMs: Date.now() - start,
+  })
+
+  // Non-blocking D1 write
+  ctx.waitUntil(persistSearch(query, result, env.DB))
+
+  return result
+}
