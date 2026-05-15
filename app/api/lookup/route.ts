@@ -1,11 +1,11 @@
 /**
- * app/api/lookup/route.ts — thin edge proxy to the Worker.
+ * app/api/lookup/route.ts — thin proxy to the Worker.
  *
  * Validates input, delegates to runLookup(), returns JSON.
- * Runs on the Cloudflare edge runtime via @opennextjs/cloudflare.
+ * Runs on the Node.js runtime via @opennextjs/cloudflare (Workers).
+ * NOTE: Do NOT set `export const runtime = 'edge'` — @opennextjs/cloudflare
+ * requires the Node.js runtime. The edge runtime breaks getCloudflareContext().
  */
-export const runtime = 'edge'
-
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { runLookup }  from '../../../worker/lookup'

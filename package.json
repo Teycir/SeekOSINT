@@ -9,8 +9,8 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pages:build": "npx @opennextjs/cloudflare build",
-    "deploy": "npm run pages:build && wrangler pages deploy"
+    "pages:build": "opennextjs-cloudflare build",
+    "deploy": "npm run pages:build && wrangler deploy"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.19.10",

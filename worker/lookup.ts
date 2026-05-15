@@ -128,7 +128,7 @@ export async function runLookup(
   const start = Date.now()
 
   // Key rings
-  const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GHW_KEY', 18)
+  const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GRAYHATWARFARE_API_KEY', 18)
   const ghwRing = new KeyRing(ghwKeys, env.KV, 'ghw')
 
   // ── Layers 1 + 2 run concurrently (each guarded by its circuit breaker) ──
