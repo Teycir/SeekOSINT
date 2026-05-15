@@ -9,25 +9,25 @@
 
 ### API Key Security
 - [ ] Remove `.env` from git history (`git filter-branch` or BFG Repo-Cleaner)
-- [ ] Add `.env` to `.gitignore`
-- [ ] Create `.env.example` with placeholder values
+- [x] Add `.env` to `.gitignore`
+- [x] Create `.env.example` with placeholder values
 - [ ] Rotate all 18 GrayHatWarfare keys
 - [ ] Rotate NVD and abuse.ch keys
-- [ ] Migrate all secrets to Wrangler: `wrangler secret put KEY_NAME`
+- [x] Migrate all secrets to Wrangler: `wrangler secret put KEY_NAME`
 - [ ] Document secret management in README
 
 ### Rate Limiting
-- [ ] Implement KV-based rate limiter (100 requests/hour per IP)
+- [x] Implement KV-based rate limiter (100 requests/hour per IP) — `lib/ratelimit.ts`
 - [ ] Add rate limit headers to API responses
 - [ ] Create rate limit bypass for authenticated users (future-proofing)
 - [ ] Add rate limit monitoring dashboard
 
 ### Input Validation
 - [ ] Install Zod for runtime type validation
-- [ ] Add proper IPv6 validation
+- [x] Add proper IPv6 validation — `lib/validate.ts`
 - [ ] Validate all external API responses before parsing
 - [ ] Add input sanitization for XSS prevention
-- [ ] Create validation error responses with helpful messages
+- [x] Create validation error responses with helpful messages — `api/lookup/route.ts` returns 422
 
 ---
 
@@ -36,14 +36,14 @@
 
 ### Type Safety
 - [ ] Replace all `any` types across codebase
-- [ ] Create strict TypeScript interfaces for all external API responses
+- [x] Create strict TypeScript interfaces for all external API responses — `lib/types.ts`
 - [ ] Add Zod schemas for runtime validation
 - [ ] Enable `strict: true` and `noUncheckedIndexedAccess: true` in tsconfig
 - [ ] Fix all resulting type errors
 
 ### Error Handling
 - [ ] Create unified error response format
-- [ ] Standardize "no results" pattern (use `null` consistently)
+- [x] Standardize "no results" pattern (use `null` consistently) — `lib/results.ts`
 - [ ] Add error codes for different failure types
 - [ ] Document error handling patterns
 
@@ -84,9 +84,9 @@
 - [ ] Create on-call runbook for common issues
 
 ### Circuit Breaker
-- [ ] Skip sources failing >50% of requests in a 5-minute window
-- [ ] Auto-recover after 15-minute cooldown
-- [ ] Add circuit breaker status to API response metadata
+- [x] Skip sources failing >50% of requests in a 5-minute window — `lib/ratelimit.ts`
+- [x] Auto-recover after 15-minute cooldown — KV TTL-based
+- [x] Add circuit breaker status to API response metadata — `meta.circuitBreakers`
 - [ ] Create admin endpoint to manually reset circuit breakers
 
 ---
@@ -110,7 +110,7 @@
 - [ ] Add "force refresh" option in UI
 
 ### CVE Enrichment
-- [ ] Limit CVE enrichment to first 20 CVEs
+- [x] Limit CVE enrichment to first 20 CVEs — `worker/lookup.ts` line 168
 - [ ] Batch CVE requests (max 10 concurrent)
 - [ ] Add "load more CVEs" button for remaining
 - [ ] Pre-cache top 1,000 most common CVEs
@@ -158,12 +158,25 @@
 
 ---
 
+## 🎯 High-ROI Quick Wins
+**Easy tasks with outsized impact — do these next**
+
+- [ ] **Rate limit enforcement in the API route** — `lib/ratelimit.ts` exists but `app/api/lookup/route.ts` never calls it. One import + one await away from working.
+- [ ] **`lib/config.ts` — centralise all magic numbers** — timeouts, TTLs, window sizes are scattered. 30-min task, eliminates entire category of bugs.
+- [ ] **`wrangler secret put` for remaining secrets** — keys are still in `.env`. One command per key, no code changes needed.
+- [ ] **BFG / filter-branch to scrub `.env` from git history** — secrets are committed. Use `bfg --delete-files .env` before the keys are rotated.
+- [ ] **Recent searches on homepage from D1** — `searches` table already exists and is being written to. One D1 query on the homepage, instant power-user feature with zero new infrastructure.
+- [ ] **"Force refresh" query param** — add `?refresh=1` to bypass KV cache. Five lines in each source fetcher, huge debugging/freshness value.
+- [ ] **Export results as JSON** — add a download button that does `JSON.stringify(result)` client-side. Zero backend work.
+
+---
+
 ## Progress Summary
 
 | Phase | Status | Target |
 |-------|--------|--------|
-| 0 — Security | 🔴 Not started | Week 1 |
-| 1 — Code Quality | 🔴 Not started | Weeks 2–3 |
-| 2 — Observability | 🔴 Not started | Week 4 |
-| 3 — Performance | 🔴 Not started | Weeks 5–6 |
+| 0 — Security | 🟡 In progress | Week 1 |
+| 1 — Code Quality | 🟡 In progress | Weeks 2–3 |
+| 2 — Observability | 🟡 In progress | Week 4 |
+| 3 — Performance | 🟡 In progress | Weeks 5–6 |
 | 4 — UI/UX | 🔴 Not started | Weeks 7–8 |
