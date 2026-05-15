@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Seek — Host Intelligence',
-  description: 'OSINT tool — IP, domain, and ASN intelligence across 17 sources',
+  description: 'OSINT tool — IP, domain, and ASN intelligence across 12 sources',
 }
 
 export default function RootLayout({

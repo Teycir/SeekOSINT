@@ -21,10 +21,10 @@ const domQuery: LookupQuery  = { raw: 'a.com',   type: 'domain', normalised: 'a.
 
 const bgpIPResponse = {
   data: {
-    asn: { asn: 13335, name: 'CLOUDFLARENET', description: 'Cloudflare', country_code: 'US', rir_allocation: { rir_name: 'ARIN' } },
+    // /ip response: ASN lives under rir_allocation, not d.asn
+    rir_allocation: { asn: 13335, name: 'CLOUDFLARENET', description: 'Cloudflare', country_code: 'US', rir_name: 'ARIN' },
     prefixes: { ipv4: [{ prefix: '1.1.1.0/24' }] },
-    upstreams: [{ asn: 3356 }],
-    peers: [],
+    // upstreams/peers don't exist on /ip — omitted intentionally
   },
 }
 

@@ -18,9 +18,10 @@ describe('KeyRing', () => {
     kv = mockKV()
   })
 
-  it('returns first healthy key when none are exhausted', async () => {
+  it('returns a healthy key when none are exhausted', async () => {
     const ring = new KeyRing(['key1', 'key2', 'key3'], kv, 'ghw')
     const key = await ring.nextHealthy()
+    // With round-robin, first call starts at cursor 0 → key1 (no cursor stored yet)
     expect(key).toBe('key1')
   })
 
@@ -42,5 +43,16 @@ describe('KeyRing', () => {
   it('filters empty strings from key list', () => {
     const ring = new KeyRing(['key1', '', 'key2'], kv, 'ghw')
     expect(ring.count).toBe(2)
+  })
+
+  it('advances cursor so successive calls rotate across keys', async () => {
+    const ring = new KeyRing(['key1', 'key2', 'key3'], kv, 'ghw')
+    const first  = await ring.nextHealthy()
+    const second = await ring.nextHealthy()
+    const third  = await ring.nextHealthy()
+    // Each call should advance to the next key in round-robin order
+    expect(first).toBe('key1')
+    expect(second).toBe('key2')
+    expect(third).toBe('key3')
   })
 })

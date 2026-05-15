@@ -34,22 +34,26 @@ function parseNVD(cveId: string, json: any): CVEDetail | null {
     vuln.metrics?.cvssMetricV30?.[0]?.cvssData
   const metricsV2 = vuln.metrics?.cvssMetricV2?.[0]?.cvssData
 
+  // Use spread conditionals so optional fields are ABSENT (not undefined)
+  // when their source value is missing — required by exactOptionalPropertyTypes
+  const cwe: string[] | undefined = vuln.weaknesses?.flatMap(
+    (w: { description: { value: string }[] }) => w.description.map(d => d.value),
+  )
+  const references: string[] | undefined = vuln.references?.map(
+    (r: { url: string }) => r.url,
+  )
+
   return {
-    id:               cveId,
-    description:      desc,
-    cvssV3Score:      metricsV3?.baseScore,
-    cvssV3Severity:   metricsV3?.baseSeverity,
-    cvssV2Score:      metricsV2?.baseScore,
-    cwe:              vuln.weaknesses?.flatMap(
-                        (w: { description: { value: string }[] }) =>
-                          w.description.map(d => d.value),
-                      ),
-    references:       vuln.references?.map(
-                        (r: { url: string }) => r.url,
-                      ),
-    publishedDate:    vuln.published,
-    lastModifiedDate: vuln.lastModified,
-    source:           'nvd',
+    id:          cveId,
+    description: desc,
+    ...(metricsV3?.baseScore   !== undefined && { cvssV3Score:    metricsV3.baseScore }),
+    ...(metricsV3?.baseSeverity !== undefined && { cvssV3Severity: metricsV3.baseSeverity }),
+    ...(metricsV2?.baseScore   !== undefined && { cvssV2Score:    metricsV2.baseScore }),
+    ...(cwe        !== undefined && { cwe }),
+    ...(references !== undefined && { references }),
+    ...(vuln.published     && { publishedDate:    vuln.published }),
+    ...(vuln.lastModified  && { lastModifiedDate: vuln.lastModified }),
+    source: 'nvd',
   }
 }
 
@@ -119,16 +123,19 @@ export async function fetchOSV(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json = await res.json<any>()
 
+    const cweIds: string[] | undefined = json.database_specific?.cwe_ids
+    const refs: string[] | undefined = json.references?.map(
+      (r: { url: string }) => r.url,
+    )
+
     const data: CVEDetail = {
       id:          cveId,
       description: json.details ?? json.summary ?? '',
-      cwe:         json.database_specific?.cwe_ids,
-      references:  json.references?.map(
-                     (r: { url: string }) => r.url,
-                   ),
-      publishedDate:    json.published,
-      lastModifiedDate: json.modified,
-      source:           'osv',
+      ...(cweIds !== undefined && { cwe: cweIds }),
+      ...(refs   !== undefined && { references: refs }),
+      ...(json.published && { publishedDate:    json.published }),
+      ...(json.modified  && { lastModifiedDate: json.modified }),
+      source: 'osv',
     }
 
     await cachePut(kv, cacheKey, data, TTL.CVE)

@@ -22,6 +22,6 @@
     "plugins": [{ "name": "next" }],
     "types": ["node"]
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx", "lib/**/*.ts", ".next/types/**/*.d.ts"],
-  "exclude": ["node_modules", "worker"]
+  "include": ["app/**/*.ts", "app/**/*.tsx", "lib/**/*.ts", "worker/**/*.ts", ".next/types/**/*.d.ts"],
+  "exclude": ["node_modules"]
 }

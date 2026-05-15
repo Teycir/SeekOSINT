@@ -39,7 +39,7 @@ export async function fetchCRTSH(
     const encoded = encodeURIComponent(`%.${query.normalised}`)
     const res = await fetch(
       `https://crt.sh/?q=${encoded}&output=json`,
-      { signal: AbortSignal.timeout(8000) },
+      { signal: AbortSignal.timeout(20000) },
     )
 
     if (!res.ok) {

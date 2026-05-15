@@ -12,6 +12,7 @@ import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped } from '../../lib/results'
 
 const SOURCE = 'robtex'
+const MAX_DNS_RECORDS = 100
 
 export async function fetchRobtex(
   query: LookupQuery,
@@ -45,11 +46,11 @@ export async function fetchRobtex(
       bgproute:   json.bgproute ?? '',
       city:       json.city ?? '',
       country:    json.country ?? '',
-      passiveDNS: (json.pas ?? []).map((p: { o: string; t: number }) => ({
+      passiveDNS: (json.pas ?? []).slice(0, MAX_DNS_RECORDS).map((p: { o: string; t: number }) => ({
         o: p.o,
         t: p.t,
       })),
-      reverseDNS: (json.ras ?? []).map((r: { o: string; t: number }) => ({
+      reverseDNS: (json.ras ?? []).slice(0, MAX_DNS_RECORDS).map((r: { o: string; t: number }) => ({
         o: r.o,
         t: r.t,
       })),

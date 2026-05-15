@@ -95,12 +95,25 @@ describe('fetchMalwareBazaar', () => {
   beforeEach(() => { kv = makeMockKV() })
   afterEach(() => vi.restoreAllMocks())
 
-  it('returns skipped when no hash is provided', async () => {
+  it('returns cached result without hitting network', async () => {
+    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
+    kvm.store.set('malwarebazaar:1.2.3.4', JSON.stringify({ query_status: 'ok', data: [] }))
+    const spy = vi.spyOn(globalThis, 'fetch')
     const r = await fetchMalwareBazaar(ipQuery, kv, API_KEY)
-    expect(r.status).toBe('skipped')
+    expect(r.status).toBe('cached')
+    expect(spy).not.toHaveBeenCalled()
   })
 
-  it('returns ok when a hash is provided', async () => {
+  it('searches by tag for IP/domain queries (no hash)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ query_status: 'no_results' }), { status: 200 }),
+    )
+    const r = await fetchMalwareBazaar(ipQuery, kv, API_KEY)
+    expect(r.status).toBe('ok')
+    expect(r.data?.query_status).toBe('no_results')
+  })
+
+  it('searches by hash when hash is provided', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({ query_status: 'ok', data: [] }), { status: 200 }),
     )
@@ -181,14 +194,25 @@ describe('fetchSSLBL', () => {
     expect(r.status).toBe('skipped')
   })
 
-  it('returns ok with empty array when no match (current behaviour)', async () => {
+  it('returns ok with empty array when no DstIP match', async () => {
     const kvm = kv as unknown as ReturnType<typeof makeMockKV>
     kvm.store.set('sslbl:blocklist', JSON.stringify([
-      { SHA1: 'abc', Listingdate: '2024-01-01', SuspiciousReason: 'Dridex C&C', Listingtime: '12:00:00' },
+      { SHA1: 'abc', Listingdate: '2024-01-01', SuspiciousReason: 'Dridex C&C', Listingtime: '12:00:00', DstIP: '9.9.9.9' },
     ]))
     const r = await fetchSSLBL(ipQuery, kv)
     expect(r.status).toBe('ok')
-    expect(Array.isArray(r.data)).toBe(true)
+    expect(r.data).toHaveLength(0)
+  })
+
+  it('returns matching entry when DstIP matches query', async () => {
+    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
+    kvm.store.set('sslbl:blocklist', JSON.stringify([
+      { SHA1: 'abc', Listingdate: '2024-01-01', SuspiciousReason: 'Dridex C&C', Listingtime: '12:00:00', DstIP: '1.2.3.4' },
+    ]))
+    const r = await fetchSSLBL(ipQuery, kv)
+    expect(r.status).toBe('ok')
+    expect(r.data).toHaveLength(1)
+    expect(r.data?.[0]?.SHA1).toBe('abc')
   })
 
   it('downloads blocklist on miss', async () => {
