@@ -170,7 +170,7 @@ export async function runLookup(
 
   const vulns = await Promise.allSettled(
     cveIds.map(id =>
-      withBreaker('nvd', env.KV, () => fetchCVEFull(id, env.KV, env.NVD_KEY)),
+      withBreaker('nvd', env.KV, () => fetchCVEFull(id, env.KV, env.NVD_KEY, query.forceRefresh)),
     ),
   ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
 

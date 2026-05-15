@@ -49,7 +49,7 @@ export async function fetchURLhaus(
   const SOURCE = 'urlhaus'
   const cacheKey = CacheKey.urlhaus(query.normalised)
 
-  const cached = await cacheGet<URLhausResult>(kv, cacheKey)
+  const cached = await cacheGet<URLhausResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {
@@ -76,7 +76,7 @@ export async function fetchThreatFox(
   const SOURCE = 'threatfox'
   const cacheKey = CacheKey.threatfox(query.normalised)
 
-  const cached = await cacheGet<ThreatFoxResult>(kv, cacheKey)
+  const cached = await cacheGet<ThreatFoxResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {
@@ -117,7 +117,7 @@ export async function fetchMalwareBazaar(
   const lookupValue = hash ?? query.normalised
   const cacheKey = CacheKey.malwarebazaar(lookupValue)
 
-  const cached = await cacheGet<MalwareBazaarResult>(kv, cacheKey)
+  const cached = await cacheGet<MalwareBazaarResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {
@@ -150,7 +150,7 @@ export async function fetchFeodo(
   // Feodo only has meaning for IPs
   if (query.type !== 'ip') return skipped(SOURCE)
 
-  let list = await cacheGet<FeodoEntry[]>(kv, CacheKey.feodoList())
+  let list = await cacheGet<FeodoEntry[]>(kv, CacheKey.feodoList(), query.forceRefresh)
 
   if (!list) {
     try {
@@ -183,7 +183,7 @@ export async function fetchSSLBL(
   // SSLBL tracks SSL certificates — only meaningful for IP queries
   if (query.type !== 'ip') return skipped(SOURCE)
 
-  let list = await cacheGet<SSLBLEntry[]>(kv, CacheKey.sslblList())
+  let list = await cacheGet<SSLBLEntry[]>(kv, CacheKey.sslblList(), query.forceRefresh)
 
   if (!list) {
     try {

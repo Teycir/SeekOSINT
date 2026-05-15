@@ -42,7 +42,7 @@ export async function fetchIPAPI(
   if (query.type !== 'ip') return skipped(SOURCE)
 
   const cacheKey = CacheKey.ipapi(query.normalised)
-  const cached = await cacheGet<IPAPIResult>(kv, cacheKey)
+  const cached = await cacheGet<IPAPIResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

@@ -15,7 +15,8 @@ import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
-  const q = searchParams.get('q')
+  const q       = searchParams.get('q')
+  const refresh = searchParams.get('refresh') === '1'
 
   if (!q) {
     return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
@@ -54,7 +55,7 @@ export async function GET(req: Request): Promise<Response> {
 
   // ── Lookup ──────────────────────────────────────────────────────────────────
   try {
-    const result = await runLookup(query, env as unknown as Env, ctx)
+    const result = await runLookup({ ...query, forceRefresh: refresh }, env as unknown as Env, ctx)
     return Response.json(result, {
       headers: {
         'X-RateLimit-Limit':     '100',

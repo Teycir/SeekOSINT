@@ -199,11 +199,12 @@ export async function fetchCVE(
   cveId: string,
   kv: KVNamespace,
   nvdKey: string,
+  forceRefresh = false,
 ): Promise<SourceResult<CVEDetail>> {
   const SOURCE = 'nvd'
   const cacheKey = CacheKey.nvd(cveId)
 
-  const cached = await cacheGet<CVEDetail>(kv, cacheKey)
+  const cached = await cacheGet<CVEDetail>(kv, cacheKey, forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {
@@ -238,9 +239,9 @@ export async function fetchCVEFull(
   cveId: string,
   kv: KVNamespace,
   nvdKey: string,
+  forceRefresh = false,
 ): Promise<SourceResult<CVEDetail>> {
-  // Primary: NVD+CIRCL race gives us CVSS + description
-  const primary = await fetchCVE(cveId, kv, nvdKey)
+  const primary = await fetchCVE(cveId, kv, nvdKey, forceRefresh)
   return primary
 }
 

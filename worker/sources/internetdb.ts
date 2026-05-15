@@ -18,7 +18,7 @@ export async function fetchInternetDB(
   if (query.type !== 'ip') return skipped(SOURCE)
 
   const cacheKey = CacheKey.internetdb(query.normalised)
-  const cached = await cacheGet<InternetDBResult>(kv, cacheKey)
+  const cached = await cacheGet<InternetDBResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

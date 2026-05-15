@@ -18,7 +18,7 @@ export async function fetchPassiveDNS(
   kv: KVNamespace,
 ): Promise<SourceResult<PassiveDNSRecord[]>> {
   const cacheKey = CacheKey.passivedns(query.normalised)
-  const cached = await cacheGet<PassiveDNSRecord[]>(kv, cacheKey)
+  const cached = await cacheGet<PassiveDNSRecord[]>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

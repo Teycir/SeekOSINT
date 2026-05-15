@@ -10,15 +10,16 @@ import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { runLookup } from '../../../worker/lookup'
 import type { Env, HostResult, SourceResult } from '../../../lib/types'
+import { ExportButton } from '../../components/ExportButton'
 
 // ─── Data fetching — direct call, no HTTP round-trip ─────────────────────────
 
-async function fetchResult(rawQuery: string): Promise<HostResult | null> {
+async function fetchResult(rawQuery: string, forceRefresh = false): Promise<HostResult | null> {
   try {
     const query = parseQuery(rawQuery)
     if (!query) return null
     const { env, ctx } = getCloudflareContext()
-    return await runLookup(query, env as unknown as Env, ctx)
+    return await runLookup({ ...query, forceRefresh }, env as unknown as Env, ctx)
   } catch (err) {
     console.error('[fetchResult] runLookup failed:', err)
     return null
@@ -328,11 +329,14 @@ function MetaBar({ result }: { result: HostResult }) {
 
 export default async function HostPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ query: string }>
+  searchParams: Promise<{ refresh?: string }>
 }) {
-  const { query: rawQuery } = await params
-  const result = await fetchResult(decodeURIComponent(rawQuery))
+  const [{ query: rawQuery }, sp] = await Promise.all([params, searchParams])
+  const forceRefresh = sp.refresh === '1'
+  const result = await fetchResult(decodeURIComponent(rawQuery), forceRefresh)
 
   if (!result) notFound()
 
@@ -344,7 +348,20 @@ export default async function HostPage({
             <h1 className="font-mono text-xl font-semibold text-white">{result.query.normalised}</h1>
             <p className="text-xs text-neutral-500 uppercase tracking-wide">{result.query.type}</p>
           </div>
-          <a href="/" className="text-sm text-neutral-500 hover:text-white">← New search</a>
+          <div className="flex items-center gap-3">
+            <ExportButton
+              resultJson={JSON.stringify(result, null, 2)}
+              filename={`seekosint-${result.query.normalised}.json`}
+            />
+            <a
+              href={`/host/${encodeURIComponent(result.query.normalised)}?refresh=1`}
+              className="text-xs text-neutral-500 hover:text-neon-red font-mono transition-colors"
+              title="Bypass cache and re-fetch all sources"
+            >
+              ↺ refresh
+            </a>
+            <a href="/" className="text-sm text-neutral-500 hover:text-white">← New search</a>
+          </div>
         </div>
         <OverviewSection result={result} />
         <PortsSection result={result} />

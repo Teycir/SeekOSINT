@@ -32,7 +32,7 @@ export async function fetchCRTSH(
   if (query.type !== 'domain') return skipped(SOURCE)
 
   const cacheKey = CacheKey.crtsh(query.normalised)
-  const cached = await cacheGet<CertRecord[]>(kv, cacheKey)
+  const cached = await cacheGet<CertRecord[]>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

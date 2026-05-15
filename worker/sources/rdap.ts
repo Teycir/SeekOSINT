@@ -160,7 +160,7 @@ export async function fetchRDAP(
     ? CacheKey.rdapIP(query.normalised)
     : CacheKey.rdapDomain(query.normalised)
 
-  const cached = await cacheGet<RDAPResult>(kv, cacheKey)
+  const cached = await cacheGet<RDAPResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

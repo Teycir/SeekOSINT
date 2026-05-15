@@ -6,6 +6,8 @@ export interface LookupQuery {
   raw: string        // original user input
   type: QueryType
   normalised: string // trimmed, lowercased, stripped of protocol
+  /** When true, all KV cache reads are bypassed (force-fresh from upstream). */
+  forceRefresh?: boolean
 }
 
 // ─── Per-source result wrappers ───────────────────────────────────────────────

@@ -29,7 +29,7 @@ export async function fetchBGPView(
     cacheKey = CacheKey.bgpIP(query.normalised)
   }
 
-  const cached = await cacheGet<BGPViewResult>(kv, cacheKey)
+  const cached = await cacheGet<BGPViewResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

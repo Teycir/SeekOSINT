@@ -20,7 +20,7 @@ export async function fetchWayback(
   if (query.type !== 'domain') return skipped(SOURCE)
 
   const cacheKey = CacheKey.wayback(query.normalised)
-  const cached = await cacheGet<WaybackResult[]>(kv, cacheKey)
+  const cached = await cacheGet<WaybackResult[]>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

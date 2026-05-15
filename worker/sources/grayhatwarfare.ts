@@ -51,9 +51,10 @@ export async function fetchGHW(
   domain: string,
   kv: KVNamespace,
   ring: KeyRing,
+  forceRefresh = false,
 ): Promise<SourceResult<BucketResult[]>> {
   const cacheKey = CacheKey.ghwBuckets(domain)
-  const cached = await cacheGet<BucketResult[]>(kv, cacheKey)
+  const cached = await cacheGet<BucketResult[]>(kv, cacheKey, forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   const key = await ring.nextHealthy()
@@ -101,5 +102,5 @@ export async function fetchGHWForQuery(
   ring: KeyRing,
 ): Promise<SourceResult<BucketResult[]>> {
   if (query.type !== 'domain') return skipped(SOURCE)
-  return fetchGHW(query.normalised, kv, ring)
+  return fetchGHW(query.normalised, kv, ring, query.forceRefresh)
 }

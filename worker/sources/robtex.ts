@@ -21,7 +21,7 @@ export async function fetchRobtex(
   if (query.type !== 'ip') return skipped(SOURCE)
 
   const cacheKey = CacheKey.robtex(query.normalised)
-  const cached = await cacheGet<RobtexResult>(kv, cacheKey)
+  const cached = await cacheGet<RobtexResult>(kv, cacheKey, query.forceRefresh)
   if (cached) return ok(SOURCE, cached, true)
 
   try {

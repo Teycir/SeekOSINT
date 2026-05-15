@@ -47,12 +47,15 @@ export const CacheKey = {
 // ─── KV read / write ──────────────────────────────────────────────────────────
 
 /**
- * Read a JSON value from KV. Returns null on miss or parse error.
+ * Read a JSON value from KV. Returns null on miss, parse error, or when
+ * `bypass` is true (used by the ?refresh=1 force-refresh path).
  */
 export async function cacheGet<T>(
   kv: KVNamespace,
   key: string,
+  bypass = false,
 ): Promise<T | null> {
+  if (bypass) return null
   try {
     const raw = await kv.get(key)
     return raw ? (JSON.parse(raw) as T) : null
