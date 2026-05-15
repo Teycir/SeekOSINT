@@ -6,6 +6,14 @@
  * Layer 3  fires only when InternetDB returns CVE IDs
  * Layer 4  domain queries only (GHW + Wayback); skipped for IP/ASN
  *
+ * Circuit breakers
+ * ─────────────────
+ * Before each source is called, its breaker state is checked in KV.
+ * If the breaker is OPEN the source is short-circuited with a 'skipped'
+ * result — the 5-minute failure-ratio window stays intact and the source
+ * auto-recovers after the 15-minute cooldown TTL expires.
+ * Success / failure outcomes are fed back to the breaker after each call.
+ *
  * Non-blocking D1 persistence via ctx.waitUntil().
  */
 import type {
@@ -22,6 +30,12 @@ import { KeyRing } from '../lib/keyring'
 import { mergeResults } from '../lib/merge'
 import { skipped, unwrap } from '../lib/results'
 import { collectSecrets } from '../lib/validate'
+import {
+  getBreakerState,
+  getAllBreakerStatuses,
+  recordBreakerSuccess,
+  recordBreakerFailure,
+} from '../lib/ratelimit'
 
 import { fetchInternetDB } from './sources/internetdb'
 import { fetchIPAPI }      from './sources/ipapi'
@@ -40,6 +54,44 @@ import {
 import { fetchCVEFull }       from './sources/nvd'
 import { fetchGHWForQuery }   from './sources/grayhatwarfare'
 import { fetchWayback }       from './sources/wayback'
+
+// ─── All source names (must match the strings used inside each fetcher) ────────
+
+const ALL_SOURCES = [
+  'internetdb', 'ipapi', 'bgpview', 'rdap', 'crtsh',
+  'passivedns', 'robtex',
+  'urlhaus', 'threatfox', 'malwarebazaar', 'feodo', 'sslbl',
+  'nvd', 'ghw', 'wayback',
+] as const
+
+// ─── Breaker-aware fetch wrapper ─────────────────────────────────────────────
+
+/**
+ * Wraps a source fetch with circuit-breaker guard.
+ * - OPEN → immediately returns skipped()
+ * - CLOSED / HALF-OPEN → calls fetcher, records success/failure
+ */
+async function withBreaker<T>(
+  source: string,
+  kv: KVNamespace,
+  fetcher: () => Promise<SourceResult<T>>,
+): Promise<SourceResult<T>> {
+  const state = await getBreakerState(source, kv)
+  if (state === 'open') {
+    return skipped<T>(source)
+  }
+
+  const result = await fetcher()
+
+  if (result.status === 'error') {
+    await recordBreakerFailure(source, kv)
+  } else {
+    // ok, cached, skipped — all considered non-failures
+    await recordBreakerSuccess(source, kv)
+  }
+
+  return result
+}
 
 // ─── D1 persistence ───────────────────────────────────────────────────────────
 
@@ -79,7 +131,7 @@ export async function runLookup(
   const ghwKeys = collectSecrets(env as Record<string, unknown>, 'GHW_KEY', 18)
   const ghwRing = new KeyRing(ghwKeys, env.KV, 'ghw')
 
-  // ── Layers 1 + 2 run concurrently ────────────────────────────────────────
+  // ── Layers 1 + 2 run concurrently (each guarded by its circuit breaker) ──
   const [
     // Layer 1
     internetdbResult,
@@ -96,18 +148,18 @@ export async function runLookup(
     feodoResult,
     sslblResult,
   ] = await Promise.allSettled([
-    fetchInternetDB(query, env.KV),
-    fetchIPAPI(query, env.KV),
-    fetchBGPView(query, env.KV),
-    fetchRDAP(query, env.KV),
-    fetchCRTSH(query, env.KV),
-    fetchPassiveDNS(query, env.KV),
-    fetchRobtex(query, env.KV),
-    fetchURLhaus(query, env.KV, env.ABUSECH_KEY),
-    fetchThreatFox(query, env.KV, env.ABUSECH_KEY),
-    fetchMalwareBazaar(query, env.KV, env.ABUSECH_KEY),
-    fetchFeodo(query, env.KV),
-    fetchSSLBL(query, env.KV),
+    withBreaker('internetdb', env.KV, () => fetchInternetDB(query, env.KV)),
+    withBreaker('ipapi',      env.KV, () => fetchIPAPI(query, env.KV)),
+    withBreaker('bgpview',    env.KV, () => fetchBGPView(query, env.KV)),
+    withBreaker('rdap',       env.KV, () => fetchRDAP(query, env.KV)),
+    withBreaker('crtsh',      env.KV, () => fetchCRTSH(query, env.KV)),
+    withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV)),
+    withBreaker('robtex',     env.KV, () => fetchRobtex(query, env.KV)),
+    withBreaker('urlhaus',       env.KV, () => fetchURLhaus(query, env.KV, env.ABUSECH_KEY)),
+    withBreaker('threatfox',     env.KV, () => fetchThreatFox(query, env.KV, env.ABUSECH_KEY)),
+    withBreaker('malwarebazaar', env.KV, () => fetchMalwareBazaar(query, env.KV, env.ABUSECH_KEY)),
+    withBreaker('feodo',         env.KV, () => fetchFeodo(query, env.KV)),
+    withBreaker('sslbl',         env.KV, () => fetchSSLBL(query, env.KV)),
   ])
 
   // ── Layer 3: CVE enrichment — only if InternetDB found CVEs ──────────────
@@ -116,20 +168,25 @@ export async function runLookup(
   const cveIds = (idbData?.vulns ?? []).slice(0, 20)
 
   const vulns = await Promise.allSettled(
-    cveIds.map(id => fetchCVEFull(id, env.KV, env.NVD_KEY)),
+    cveIds.map(id =>
+      withBreaker('nvd', env.KV, () => fetchCVEFull(id, env.KV, env.NVD_KEY)),
+    ),
   ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
 
   // ── Layer 4: Bucket recon + Wayback — domain queries only ────────────────
   // Skip entirely for IP/ASN queries to avoid two no-op promise slots
   const [bucketsResult, waybackResult] = query.type === 'domain'
     ? await Promise.allSettled([
-        fetchGHWForQuery(query, env.KV, ghwRing),
-        fetchWayback(query, env.KV),
+        withBreaker('ghw',     env.KV, () => fetchGHWForQuery(query, env.KV, ghwRing)),
+        withBreaker('wayback', env.KV, () => fetchWayback(query, env.KV)),
       ])
     : [
         { status: 'fulfilled' as const, value: skipped<BucketResult[]>('ghw') },
         { status: 'fulfilled' as const, value: skipped<WaybackResult[]>('wayback') },
       ]
+
+  // ── Collect breaker statuses for meta (non-blocking, best-effort) ─────────
+  const circuitBreakers = await getAllBreakerStatuses([...ALL_SOURCES], env.KV)
 
   // ── Merge & return ────────────────────────────────────────────────────────
   const result = mergeResults({
@@ -155,7 +212,8 @@ export async function runLookup(
       buckets: bucketsResult,
       wayback: waybackResult,
     },
-    durationMs: Date.now() - start,
+    durationMs:      Date.now() - start,
+    circuitBreakers,
   })
 
   // Non-blocking D1 write

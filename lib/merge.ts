@@ -6,11 +6,13 @@
  * - A rejected promise becomes a SourceResult with status: 'error'
  * - Counts cache hits, failures, and total sources for the meta block
  * - Populates resolvedIP / resolvedDomain by cross-referencing sources
+ * - Embeds circuit-breaker snapshots in meta.circuitBreakers
  */
 import type {
   BucketResult,
   CVEDetail,
   CertRecord,
+  CircuitBreakerMeta,
   FeodoEntry,
   HostResult,
   IPAPIResult,
@@ -53,6 +55,8 @@ interface MergeInput {
     wayback: PromiseSettledResult<SourceResult<WaybackResult[]>>
   }
   durationMs: number
+  /** Circuit-breaker snapshots collected by the orchestrator before merging */
+  circuitBreakers: CircuitBreakerMeta[]
 }
 
 function countMeta(results: SourceResult<unknown>[]): {
@@ -151,6 +155,7 @@ export function mergeResults(input: MergeInput): HostResult {
       cacheHits,
       sourcesQueried,
       sourcesFailed,
+      circuitBreakers: input.circuitBreakers,
     },
   }
 }

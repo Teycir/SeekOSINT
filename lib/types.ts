@@ -221,6 +221,17 @@ export interface WaybackResult {
   mimeType: string
 }
 
+// ─── Circuit breaker meta (embedded in HostResult.meta) ───────────────────────
+
+export interface CircuitBreakerMeta {
+  source:         string
+  state:          'closed' | 'open' | 'half-open'
+  windowRequests: number
+  windowFailures: number
+  /** Unix-ms when the breaker auto-recovers; 0 when closed */
+  opensUntil:     number
+}
+
 // ─── Merged output ─────────────────────────────────────────────────────────────
 
 export interface HostResult {
@@ -258,11 +269,13 @@ export interface HostResult {
   }
 
   meta: {
-    durationMs:     number
-    timestamp:      number
-    cacheHits:      number
-    sourcesQueried: number
-    sourcesFailed:  number
+    durationMs:      number
+    timestamp:       number
+    cacheHits:       number
+    sourcesQueried:  number
+    sourcesFailed:   number
+    /** Snapshot of every source's circuit-breaker state at response time */
+    circuitBreakers: CircuitBreakerMeta[]
   }
 }
 

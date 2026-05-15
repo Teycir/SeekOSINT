@@ -41,7 +41,8 @@ export async function fetchPassiveDNS(
       .map(line => {
         try {
           return JSON.parse(line) as PassiveDNSRecord
-        } catch {
+        } catch (err) {
+          console.error('[passivedns] JSON parse failed for line:', line, err)
           return null
         }
       })

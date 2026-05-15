@@ -33,7 +33,8 @@ async function getRDAPBaseForDomain(
       if (!res.ok) return null
       boot = await res.json<BootstrapEntry>()
       await cachePut(kv, CacheKey.rdapBootDNS(), boot, TTL.RDAP)
-    } catch {
+    } catch (err) {
+      console.error('[rdap] getRDAPBaseForDomain bootstrap fetch failed:', err)
       return null
     }
   }
@@ -57,7 +58,8 @@ async function getRDAPBaseForIP(
         boot = await res.json<BootstrapEntry>()
         await cachePut(kv, CacheKey.rdapBootIP(), boot, TTL.RDAP)
       }
-    } catch {
+    } catch (err) {
+      console.error('[rdap] getRDAPBaseForIP bootstrap fetch failed:', err)
       // Fall through to ARIN default
     }
   }

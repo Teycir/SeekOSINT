@@ -19,7 +19,8 @@ async function fetchResult(query: string): Promise<HostResult | null> {
     )
     if (!res.ok) return null
     return (await res.json()) as HostResult
-  } catch {
+  } catch (err) {
+    console.error('[fetchResult] fetch failed for query:', query, err)
     return null
   }
 }

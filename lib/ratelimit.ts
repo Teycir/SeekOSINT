@@ -10,11 +10,28 @@
  *
  * Circuit breaker
  * ────────────────
- * Tracks consecutive failures for an upstream service in KV.
- * After TRIP_THRESHOLD failures the breaker OPENS and requests
- * are short-circuited for OPEN_TTL_SECONDS, then it half-opens
- * and allows the next probe through.
+ * Tracks requests and failures for each upstream source in a 5-minute
+ * rolling window stored in KV.  The breaker OPENS when the failure
+ * ratio exceeds 50 % of requests in that window.  After a 15-minute
+ * cooldown (OPEN_TTL_SECONDS) the KV key expires and the breaker
+ * moves to 'half-open': the next request probes through; if it
+ * succeeds the breaker resets to 'closed'.
+ *
+ * KV schema (all keys prefixed with "cb:<source>:")
+ *   :window_reqs  – total requests in the current 5-min window (TTL = 5 min)
+ *   :window_fails – failures in the current 5-min window    (TTL = 5 min)
+ *   :open         – presence means breaker is open          (TTL = 15 min)
  */
+
+// ─── Log sanitization ─────────────────────────────────────────────────────────
+
+/**
+ * Sanitize user input before logging to prevent log injection (CWE-117).
+ * Removes newlines, carriage returns, and other control characters.
+ */
+function sanitizeForLog(input: string): string {
+  return input.replace(/[\r\n\t\x00-\x1F\x7F]/g, '')
+}
 
 // ─── Per-IP rate limiter ──────────────────────────────────────────────────────
 
@@ -75,55 +92,200 @@ export async function checkRateLimit(
 
 // ─── Circuit breaker ──────────────────────────────────────────────────────────
 
-const CB_KV_PREFIX        = 'cb:'
-const TRIP_THRESHOLD      = 5     // consecutive failures before opening
-const OPEN_TTL_SECONDS    = 60    // stay open for 60 s, then half-open probe
+const CB_KV_PREFIX          = 'cb:'
+const WINDOW_TTL_SECONDS    = 5  * 60   // 5-minute rolling window for ratio check
+const OPEN_TTL_SECONDS      = 15 * 60   // 15-minute cooldown before auto-recovery
+const TRIP_RATIO            = 0.5       // open when failures / requests > 50 %
+const MIN_REQUESTS_TO_TRIP  = 4         // need at least 4 requests before tripping
 
 export type BreakerState = 'closed' | 'open' | 'half-open'
 
+export interface BreakerStatus {
+  source: string
+  state: BreakerState
+  /** Requests counted in the current 5-min window */
+  windowRequests: number
+  /** Failures counted in the current 5-min window */
+  windowFailures: number
+  /** Unix-ms when the open key expires (i.e. recovery time); 0 if closed */
+  opensUntil: number
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+function reqKey  (source: string) { return `${CB_KV_PREFIX}${source}:window_reqs`  }
+function failKey (source: string) { return `${CB_KV_PREFIX}${source}:window_fails` }
+function openKey (source: string) { return `${CB_KV_PREFIX}${source}:open`         }
+
+async function getWindowCounts(
+  source: string,
+  kv: KVNamespace,
+): Promise<{ reqs: number; fails: number }> {
+  try {
+    const [r, f] = await Promise.all([
+      kv.get(reqKey(source),  'text'),
+      kv.get(failKey(source), 'text'),
+    ])
+    return {
+      reqs:  r ? parseInt(r, 10) : 0,
+      fails: f ? parseInt(f, 10) : 0,
+    }
+  } catch (err) {
+    console.error(`[ratelimit] getWindowCounts failed for source=${sanitizeForLog(source)}:`, err)
+    return { reqs: 0, fails: 0 }
+  }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Returns the current breaker state for a source.
+ * 'half-open' is signalled by the absence of the :open key (it expired)
+ * combined with a non-zero failure history in the window.
+ */
 export async function getBreakerState(
   source: string,
   kv: KVNamespace,
 ): Promise<BreakerState> {
   try {
-    const failCount = await kv.get(`${CB_KV_PREFIX}${source}:fails`, 'text')
-    const openFlag  = await kv.get(`${CB_KV_PREFIX}${source}:open`,  'text')
+    const openFlag = await kv.get(openKey(source), 'text')
+    if (openFlag !== null) return 'open'
 
-    if (openFlag) return 'open'
-    const fails = failCount ? parseInt(failCount, 10) : 0
-    return fails >= TRIP_THRESHOLD ? 'open' : 'closed'
-  } catch {
-    return 'closed'  // fail open
+    // If the open key has expired, the next probe is 'half-open'
+    const { reqs, fails } = await getWindowCounts(source, kv)
+    if (reqs >= MIN_REQUESTS_TO_TRIP && fails / reqs > TRIP_RATIO) {
+      // Window counts are still warm but the open flag expired → half-open
+      return 'half-open'
+    }
+
+    return 'closed'
+  } catch (err) {
+    console.error(`[ratelimit] getBreakerState failed for source=${sanitizeForLog(source)}:`, err)
+    return 'closed'
   }
 }
 
+/**
+ * Full status snapshot for a single source (used by the admin endpoint
+ * and the meta block in API responses).
+ */
+export async function getBreakerStatus(
+  source: string,
+  kv: KVNamespace,
+): Promise<BreakerStatus> {
+  try {
+    const [openMeta, { reqs, fails }] = await Promise.all([
+      kv.getWithMetadata<{ expiration?: number }>(openKey(source)),
+      getWindowCounts(source, kv),
+    ])
+
+    const isOpen    = openMeta.result !== null
+    const opensUntil = isOpen && openMeta.metadata?.expiration
+      ? openMeta.metadata.expiration * 1000   // KV expiration is unix-seconds
+      : 0
+
+    let state: BreakerState = 'closed'
+    if (isOpen) {
+      state = 'open'
+    } else if (reqs >= MIN_REQUESTS_TO_TRIP && fails / reqs > TRIP_RATIO) {
+      state = 'half-open'
+    }
+
+    return { source, state, windowRequests: reqs, windowFailures: fails, opensUntil }
+  } catch (err) {
+    console.error(`[ratelimit] getBreakerStatus failed for source=${sanitizeForLog(source)}:`, err)
+    return { source, state: 'closed', windowRequests: 0, windowFailures: 0, opensUntil: 0 }
+  }
+}
+
+/**
+ * Bulk-fetch status for every source in one call (used by mergeResults).
+ */
+export async function getAllBreakerStatuses(
+  sources: string[],
+  kv: KVNamespace,
+): Promise<BreakerStatus[]> {
+  return Promise.all(sources.map(s => getBreakerStatus(s, kv)))
+}
+
+/**
+ * Call on a successful response from a source.
+ * Resets the failure/request window so closed stays closed.
+ */
 export async function recordBreakerSuccess(
   source: string,
   kv: KVNamespace,
 ): Promise<void> {
   try {
-    await kv.delete(`${CB_KV_PREFIX}${source}:fails`)
-    await kv.delete(`${CB_KV_PREFIX}${source}:open`)
-  } catch { /* ignore */ }
+    await Promise.all([
+      kv.delete(reqKey(source)),
+      kv.delete(failKey(source)),
+      kv.delete(openKey(source)),
+    ])
+  } catch (err) {
+    console.error(`[ratelimit] recordBreakerSuccess failed for source=${sanitizeForLog(source)}:`, err)
+  }
 }
 
+/**
+ * Call on any failed response from a source (non-2xx, timeout, etc.).
+ * Increments counters; opens the breaker when the failure ratio exceeds
+ * TRIP_RATIO within the 5-minute window.
+ */
 export async function recordBreakerFailure(
   source: string,
   kv: KVNamespace,
 ): Promise<void> {
   try {
-    const raw = await kv.get(`${CB_KV_PREFIX}${source}:fails`, 'text')
-    const fails = raw ? parseInt(raw, 10) + 1 : 1
+    const { reqs: prevReqs, fails: prevFails } = await getWindowCounts(source, kv)
 
-    // Always update the failure counter (no expiry — reset only on success)
-    await kv.put(`${CB_KV_PREFIX}${source}:fails`, String(fails))
+    const newReqs  = prevReqs  + 1
+    const newFails = prevFails + 1
 
-    if (fails >= TRIP_THRESHOLD) {
-      // Open the breaker for OPEN_TTL_SECONDS; after that KV TTL removes the
-      // key and the next check returns half-open (first probe gets through).
-      await kv.put(`${CB_KV_PREFIX}${source}:open`, '1', {
-        expirationTtl: OPEN_TTL_SECONDS,
-      })
+    // Write updated counters; TTL resets the window after 5 minutes
+    await Promise.all([
+      kv.put(reqKey(source),  String(newReqs),  { expirationTtl: WINDOW_TTL_SECONDS }),
+      kv.put(failKey(source), String(newFails), { expirationTtl: WINDOW_TTL_SECONDS }),
+    ])
+
+    // Trip the breaker when ratio > 50 % and we have enough data points
+    if (newReqs >= MIN_REQUESTS_TO_TRIP && newFails / newReqs > TRIP_RATIO) {
+      await kv.put(openKey(source), '1', { expirationTtl: OPEN_TTL_SECONDS })
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.error(`[ratelimit] recordBreakerFailure failed for source=${sanitizeForLog(source)}:`, err)
+  }
+}
+
+/**
+ * Record a successful request without resetting the failure counters.
+ * Used by sources to increment the request counter even on cache hits
+ * so the ratio calculation stays accurate.
+ */
+export async function recordBreakerRequest(
+  source: string,
+  kv: KVNamespace,
+): Promise<void> {
+  try {
+    const raw = await kv.get(reqKey(source), 'text')
+    const next = (raw ? parseInt(raw, 10) : 0) + 1
+    await kv.put(reqKey(source), String(next), { expirationTtl: WINDOW_TTL_SECONDS })
+  } catch (err) {
+    console.error(`[ratelimit] recordBreakerRequest failed for source=${sanitizeForLog(source)}:`, err)
+  }
+}
+
+/**
+ * Manually reset a circuit breaker — clears open flag and window counters.
+ * Called by the admin endpoint.
+ */
+export async function resetBreaker(
+  source: string,
+  kv: KVNamespace,
+): Promise<void> {
+  await Promise.all([
+    kv.delete(reqKey(source)),
+    kv.delete(failKey(source)),
+    kv.delete(openKey(source)),
+  ])
 }

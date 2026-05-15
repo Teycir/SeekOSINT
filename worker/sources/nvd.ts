@@ -58,7 +58,9 @@ async function acquireNVDSlot(kv: KVNamespace): Promise<void> {
     await kv.put(NVD_THROTTLE_KEY, String(Date.now()), {
       expirationTtl: 60, // clean up after 60 s
     })
-  } catch { /* fail open — throttle is advisory */ }
+  } catch (err) {
+    console.error('[nvd] acquireNVDSlot failed:', err)
+  }
 }
 
 // ─── NVD ─────────────────────────────────────────────────────────────────────
