@@ -1,0 +1,46 @@
+
+> seek@0.1.0 pages:build
+> npx @opennextjs/cloudflare build
+
+
+┌─────────────────────────────┐
+│ OpenNext — Cloudflare build │
+└─────────────────────────────┘
+
+file:///home/teycir/Repos/Seek/node_modules/@opennextjs/cloudflare/dist/cli/build/utils/ensure-cf-config.js:62
+        throw new Error(errorMessage);
+              ^
+
+Error: The `open-next.config.ts` should have a default export like this:
+
+{
+  default: {
+    override: {
+      wrapper: "cloudflare-node",
+      converter: "edge",
+      proxyExternalRequest: "fetch",
+      incrementalCache: "dummy" | function,
+      tagCache: "dummy" | function,
+      queue: "dummy" | "direct" | function,
+    },
+  },
+  edgeExternals: ["node:crypto"],
+  middleware: {
+    external: true,
+    override: {
+      wrapper: "cloudflare-edge",
+      converter: "edge",
+      proxyExternalRequest: "fetch",
+      incrementalCache: "dummy" | function,
+      tagCache: "dummy" | function,
+      queue: "dummy" | "direct" | function,
+    },
+  },
+}
+
+
+    at ensureCloudflareConfig [90m(file:///home/teycir/Repos/Seek/[39mnode_modules/[4m@opennextjs/cloudflare[24m/dist/cli/build/utils/ensure-cf-config.js:62:15[90m)[39m
+    at compileConfig [90m(file:///home/teycir/Repos/Seek/[39mnode_modules/[4m@opennextjs/cloudflare[24m/dist/cli/commands/utils/utils.js:58:5[90m)[39m
+    at async buildCommand [90m(file:///home/teycir/Repos/Seek/[39mnode_modules/[4m@opennextjs/cloudflare[24m/dist/cli/commands/build.js:14:34[90m)[39m
+
+Node.js v20.20.0

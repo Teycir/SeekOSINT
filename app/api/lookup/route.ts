@@ -2,11 +2,11 @@
  * app/api/lookup/route.ts — thin edge proxy to the Worker.
  *
  * Validates input, delegates to runLookup(), returns JSON.
- * Runs on the Cloudflare edge runtime via @cloudflare/next-on-pages.
+ * Runs on the Cloudflare edge runtime via @opennextjs/cloudflare.
  */
 export const runtime = 'edge'
 
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { runLookup }  from '../../../worker/lookup'
 import type { Env }   from '../../../lib/types'
@@ -27,7 +27,7 @@ export async function GET(req: Request): Promise<Response> {
     )
   }
 
-  const { env, ctx } = getRequestContext()
+  const { env, ctx } = getCloudflareContext()
 
   try {
     const result = await runLookup(query, env as unknown as Env, ctx)

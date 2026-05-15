@@ -9,12 +9,14 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pages:build": "npx @cloudflare/next-on-pages",
-    "deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static --project-name seek"
+    "pages:build": "npx @opennextjs/cloudflare build",
+    "deploy": "npm run pages:build && wrangler pages deploy"
   },
   "dependencies": {
-    "@cloudflare/next-on-pages": "^1.13.0",
-    "next": "^15.5.18",
+    "@opennextjs/cloudflare": "^1.19.10",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.16.0",
+    "next": "16.2.6",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
@@ -24,10 +26,11 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.0",
+    "esbuild": "^0.28.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.8.2",
     "vitest": "^2.1.0",
-    "wrangler": "^3.80.0"
+    "wrangler": "^4.86.0"
   }
 }

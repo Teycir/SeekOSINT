@@ -1,5 +1,10 @@
 import type { Metadata } from 'next'
+import { JetBrains_Mono } from 'next/font/google'
 import './globals.css'
+import { Footer } from './components/Footer'
+import { ScrollProgress } from './components/ScrollProgress'
+
+const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Seek — Host Intelligence',
@@ -12,8 +17,14 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="bg-neutral-950">
-      <body className="antialiased">{children}</body>
+    <html lang="en">
+      <body
+        className={`${jetbrainsMono.className} min-h-screen bg-dark-bg text-dark-text overflow-x-hidden antialiased selection:bg-neon-red/30 selection:text-neon-red`}
+      >
+        <ScrollProgress />
+        {children}
+        <Footer />
+      </body>
     </html>
   )
 }

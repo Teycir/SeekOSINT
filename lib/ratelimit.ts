@@ -179,7 +179,7 @@ export async function getBreakerStatus(
       getWindowCounts(source, kv),
     ])
 
-    const isOpen    = openMeta.result !== null
+    const isOpen    = openMeta.value !== null
     const opensUntil = isOpen && openMeta.metadata?.expiration
       ? openMeta.metadata.expiration * 1000   // KV expiration is unix-seconds
       : 0

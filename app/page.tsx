@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseQuery } from '../lib/validate'
+import { AnimatedTagline } from './components/AnimatedTagline'
 
 export default function HomePage() {
   const router = useRouter()
@@ -28,16 +29,23 @@ export default function HomePage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4">
-      <div className="w-full max-w-xl space-y-6">
-        <div className="space-y-1 text-center">
-          <h1 className="text-3xl font-semibold tracking-tight text-white">Seek</h1>
-          <p className="text-sm text-neutral-400">
-            Host intelligence across 12 sources — IP, domain, or ASN
-          </p>
+    <main className="flex min-h-screen flex-col items-center justify-center px-4">
+      {/* Background glow */}
+      <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
+        <div className="h-[600px] w-[600px] rounded-full bg-neon-red/5 blur-[120px]" />
+      </div>
+
+      <div className="relative w-full max-w-xl space-y-8">
+        {/* Header */}
+        <div className="space-y-2 text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-neon-red glow-text pulse-glow font-mono">
+            Seek
+          </h1>
+          <AnimatedTagline text="Host intelligence across 12 sources — IP, domain, or ASN" />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Form */}
+        <div className="space-y-3">
           <input
             type="text"
             value={input}
@@ -45,10 +53,15 @@ export default function HomePage() {
               setInput((e.target as HTMLInputElement).value)
               setValidationError(null)
             }}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit(e as unknown as FormEvent)}
             placeholder="8.8.8.8  ·  example.com  ·  AS15169"
-            className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 
-                       text-white placeholder-neutral-500 outline-none
-                       focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className={`w-full rounded-lg border-2 bg-black/50 px-4 py-3 font-mono text-neon-red
+                        placeholder-neon-red/20 outline-none transition-all
+                        focus:border-neon-red focus:shadow-[0_0_15px_rgba(255,26,26,0.3)]
+                        ${validationError
+                          ? 'border-red-500/70 input-error'
+                          : 'border-neon-red/30 hover:border-neon-red/50'
+                        }`}
             autoFocus
             spellCheck={false}
             autoCorrect="off"
@@ -56,17 +69,26 @@ export default function HomePage() {
           />
 
           {validationError && (
-            <p className="text-sm text-red-400">{validationError}</p>
+            <p className="text-sm text-red-400 font-mono">{validationError}</p>
           )}
 
           <button
-            type="submit"
-            className="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white
-                       transition hover:bg-blue-500 active:bg-blue-700"
+            onClick={handleSubmit}
+            className="w-full rounded-lg border-2 border-neon-red/50 bg-transparent px-4 py-3
+                       font-mono font-bold uppercase tracking-wider text-neon-red/70
+                       transition-all duration-300
+                       hover:border-neon-red hover:bg-neon-red/5 hover:text-neon-red
+                       hover:shadow-[0_0_20px_rgba(255,26,26,0.2)]
+                       active:scale-[0.98]"
           >
             Look up
           </button>
-        </form>
+        </div>
+
+        {/* Sources hint */}
+        <p className="text-center text-xs text-neon-red/30 font-mono">
+          Queries Shodan · VirusTotal · AbuseIPDB · ipinfo · Cloudflare · and 7 more
+        </p>
       </div>
     </main>
   )
