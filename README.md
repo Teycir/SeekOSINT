@@ -58,7 +58,7 @@ $ seek 1.1.1.1
     - [KV cache structure](#kv-cache-structure)
     - [Cache invalidation](#cache-invalidation)
   - [Key rotation](#key-rotation)
-    - [GrayHatWarfare (16 keys)](#grayhatwarfare-16-keys)
+    - [GrayHatWarfare (18 keys)](#grayhatwarfare-18-keys)
   - [D1 persistence](#d1-persistence)
     - [Schema](#schema)
     - [Usage](#usage)
@@ -238,7 +238,7 @@ seek/
 - D1 stores search history for analytics
 
 ### 5. Free-tier optimization
-- GrayHatWarfare: 16-key rotation (1,600 req/day)
+- GrayHatWarfare: 18-key rotation (1,800 req/day)
 - NVD: Request batching + 6s delay between calls
 - Wayback: Exponential backoff on rate limits
 - IPinfo: 50k/mo shared across all users
@@ -305,14 +305,14 @@ await env.SEEK_CACHE.put(cacheKey, JSON.stringify(freshData), {
 
 ## Key rotation
 
-### GrayHatWarfare (16 keys)
+### GrayHatWarfare (18 keys)
 ```typescript
-const keyIndex = Math.floor(Math.random() * 16) + 1;
+const keyIndex = Math.floor(Math.random() * 18) + 1;
 const apiKey = env[`GRAYHATWARFARE_API_KEY_${keyIndex}`];
 const username = env[`GRAYHATWARFARE_USERNAME_${keyIndex}`];
 ```
 
-**Daily capacity**: 16 keys × 100 req/day = 1,600 requests/day
+**Daily capacity**: 18 keys × 100 req/day = 1,800 requests/day
 
 ---
 

@@ -11,6 +11,7 @@
 import type { IPAPIResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped } from '../../lib/results'
+import { withBackoff } from '../../lib/backoff'
 
 const SOURCE = 'ipapi'
 
@@ -45,9 +46,12 @@ export async function fetchIPAPI(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch(
-      `https://ip-api.com/json/${query.normalised}?fields=66846719`,
-      { signal: AbortSignal.timeout(8000) },
+    const res = await withBackoff(
+      () => fetch(
+        `https://ip-api.com/json/${query.normalised}?fields=66846719`,
+        { signal: AbortSignal.timeout(8000) },
+      ),
+      { source: SOURCE, maxAttempts: 3, baseDelayMs: 1_000 },
     )
 
     if (!res.ok) {

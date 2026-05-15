@@ -13,10 +13,53 @@
  * CIRCL: https://cve.circl.lu/api/cve/{id}
  * OSV:   https://api.osv.dev/v1/vulns/{id}
  * TTL:   30 days
+ *
+ * Throttling: NVD allows 50 req/30s with an API key (≈ 1 req/0.6s).
+ * We enforce a minimum 6s gap between NVD calls via a KV-backed timestamp
+ * so that concurrent CVE lookups don't pile on and get 429'd.
+ * Circuit breaker: after 5 consecutive NVD failures the breaker opens for
+ * 60s and all NVD calls fall through directly to CIRCL.
  */
 import type { CVEDetail, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error } from '../../lib/results'
+import { sleep } from '../../lib/backoff'
+import {
+  getBreakerState,
+  recordBreakerSuccess,
+  recordBreakerFailure,
+} from '../../lib/ratelimit'
+
+// ─── NVD throttle ─────────────────────────────────────────────────────────────
+
+/**
+ * Enforce a 6-second minimum gap between outbound NVD calls using a KV
+ * timestamp. If the last NVD call was fewer than NVD_MIN_GAP_MS ago we
+ * sleep for the remainder before proceeding.
+ *
+ * This is best-effort: concurrent Worker invocations may still race, but
+ * the 30-day cache means the vast majority of requests never reach NVD.
+ */
+const NVD_MIN_GAP_MS    = 6_000
+const NVD_THROTTLE_KEY  = 'nvd:last_call_ts'
+
+async function acquireNVDSlot(kv: KVNamespace): Promise<void> {
+  try {
+    const raw  = await kv.get(NVD_THROTTLE_KEY, 'text')
+    const last = raw ? parseInt(raw, 10) : 0
+    const now  = Date.now()
+    const wait = NVD_MIN_GAP_MS - (now - last)
+
+    if (wait > 0) {
+      await sleep(wait)
+    }
+
+    // Stamp the slot (best-effort — race is acceptable, just slightly optimistic)
+    await kv.put(NVD_THROTTLE_KEY, String(Date.now()), {
+      expirationTtl: 60, // clean up after 60 s
+    })
+  } catch { /* fail open — throttle is advisory */ }
+}
 
 // ─── NVD ─────────────────────────────────────────────────────────────────────
 
@@ -60,7 +103,9 @@ function parseNVD(cveId: string, json: any): CVEDetail | null {
 async function fetchFromNVD(
   cveId: string,
   apiKey: string,
+  kv: KVNamespace,
 ): Promise<CVEDetail> {
+  await acquireNVDSlot(kv)
   const res = await fetch(
     `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${cveId}&apiKey=${apiKey}`,
     { signal: AbortSignal.timeout(8000) },
@@ -160,11 +205,16 @@ export async function fetchCVE(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
+    // Check circuit breaker — if NVD is tripping, skip straight to CIRCL
+    const breakerState = await getBreakerState('nvd', kv)
+    const nvdPromise = breakerState === 'open'
+      ? Promise.reject(new Error('NVD circuit breaker open — skipping to CIRCL'))
+      : fetchFromNVD(cveId, nvdKey, kv)
+          .then(async d => { await recordBreakerSuccess('nvd', kv); return d })
+          .catch(async (e: unknown) => { await recordBreakerFailure('nvd', kv); throw e })
+
     // Race NVD and CIRCL — whichever responds first wins
-    const detail = await Promise.any([
-      fetchFromNVD(cveId, nvdKey),
-      fetchFromCIRCL(cveId),
-    ])
+    const detail = await Promise.any([nvdPromise, fetchFromCIRCL(cveId)])
 
     await cachePut(kv, cacheKey, detail, TTL.CVE)
     return ok(detail.source, detail)

@@ -65,6 +65,17 @@ export async function cacheGet<T>(
 /**
  * Write a JSON value to KV with an expiry TTL in seconds.
  * Swallows errors — a failed cache write should never break a response.
+ *
+ * KV write budget (Cloudflare free tier): 1,000 writes/day.
+ * Target utilisation: ≤ 50 % (≤ 500 writes/day) to maintain a safety
+ * margin for burst traffic.  Achieved by:
+ *   • Long TTLs (CVE 30 days, BGP/RDAP 24 h) → most requests are cache hits
+ *   • Never caching errors → avoids "poison" entries that must be re-fetched
+ *   • Per-IP rate limiting → prevents a single user exhausting write quota
+ *
+ * If write quota pressure increases, consider:
+ *   • Coalescing multi-source responses into a single KV key
+ *   • Switching high-frequency keys (CORE, ABUSECH) to R2 object storage
  */
 export async function cachePut<T>(
   kv: KVNamespace,
