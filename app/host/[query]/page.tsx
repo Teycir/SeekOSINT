@@ -1,26 +1,26 @@
 /**
- * Results page — SSR, calls /api/lookup server-side during render.
+ * Results page — SSR, calls runLookup() directly (no self-fetch).
  * Each layer is a collapsible card. Failed/skipped sources render
  * a subtle "unavailable" placeholder, never a broken layout.
  *
  * Next 15+: params is a Promise — must be awaited.
  */
 import { notFound } from 'next/navigation'
-import type { HostResult, SourceResult } from '../../../lib/types'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
+import { parseQuery } from '../../../lib/validate'
+import { runLookup } from '../../../worker/lookup'
+import type { Env, HostResult, SourceResult } from '../../../lib/types'
 
-// ─── Data fetching ────────────────────────────────────────────────────────────
+// ─── Data fetching — direct call, no HTTP round-trip ─────────────────────────
 
-async function fetchResult(query: string): Promise<HostResult | null> {
+async function fetchResult(rawQuery: string): Promise<HostResult | null> {
   try {
-    const base = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
-    const res = await fetch(
-      `${base}/api/lookup?q=${encodeURIComponent(query)}`,
-      { signal: AbortSignal.timeout(30000) },
-    )
-    if (!res.ok) return null
-    return (await res.json()) as HostResult
+    const query = parseQuery(rawQuery)
+    if (!query) return null
+    const { env, ctx } = getCloudflareContext()
+    return await runLookup(query, env as unknown as Env, ctx)
   } catch (err) {
-    console.error('[fetchResult] fetch failed for query:', query, err)
+    console.error('[fetchResult] runLookup failed:', err)
     return null
   }
 }
@@ -332,8 +332,7 @@ export default async function HostPage({
   params: Promise<{ query: string }>
 }) {
   const { query: rawQuery } = await params
-  const query = decodeURIComponent(rawQuery)
-  const result = await fetchResult(query)
+  const result = await fetchResult(decodeURIComponent(rawQuery))
 
   if (!result) notFound()
 
