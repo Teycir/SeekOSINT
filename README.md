@@ -20,116 +20,83 @@ _Scan the QR code or copy the wallet address above._
 
 # SeekOSINT
 
-> **Unified threat intelligence and network reconnaissance** — Query any IP, domain, or ASN to get instant security posture, infrastructure details, and threat correlations from 17 sources.
+> **Unified host intelligence across 17 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
 **Live at:** https://seekosint.pages.dev
 
 ```
-$ seek 1.1.1.1
+$ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
 
-✓ internetdb   80, 443, 8080 open · 1 CVE
-✓ geo          Cloudflare · San Francisco · US · AS13335
-✓ bgp          CLOUDFLARENET · ARIN · 4 upstreams
-✓ rdap         1.1.1.0/24 · CLOUDFLARENET
-✓ passivedns   one.one.one.one (A, last 2024-06-01)
-✓ urlhaus      no results
-✓ feodo        not listed
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  12 sources queried · 8 cache hits · 340 ms
+{
+  "query": { "raw": "1.1.1.1", "type": "ip", "normalised": "1.1.1.1" },
+  "core": {
+    "internetdb":  { "status": "ok",     "data": { "ports": [80,443], "vulns": [] } },
+    "geo":         { "status": "cached", "data": { "country": "US", "org": "AS13335 Cloudflare" } },
+    "bgp":         { "status": "ok",     "data": { "name": "CLOUDFLARENET", "rir": "ARIN" } },
+    ...
+  },
+  "meta": { "durationMs": 312, "cacheHits": 4, "sourcesQueried": 12, "sourcesFailed": 0 }
+}
 ```
 
 ---
 
 ## Table of Contents
 
-- [SeekOSINT](#seekosint)
-  - [Table of Contents](#table-of-contents)
-  - [What SeekOSINT does](#what-seekosint-does)
-  - [Use cases](#use-cases)
-  - [Architecture overview](#architecture-overview)
-  - [Execution model](#execution-model)
-  - [Data sources](#data-sources)
-  - [Project structure](#project-structure)
-  - [Key design decisions](#key-design-decisions)
-    - [1. Edge-first architecture](#1-edge-first-architecture)
-    - [2. Layered execution](#2-layered-execution)
-    - [3. Graceful degradation](#3-graceful-degradation)
-    - [4. Aggressive caching](#4-aggressive-caching)
-    - [5. Free-tier optimization](#5-free-tier-optimization)
-  - [TypeScript types](#typescript-types)
-  - [Caching strategy](#caching-strategy)
-    - [KV cache structure](#kv-cache-structure)
-    - [Cache invalidation](#cache-invalidation)
-  - [Key rotation](#key-rotation)
-    - [GrayHatWarfare (18 keys)](#grayhatwarfare-18-keys)
-  - [D1 persistence](#d1-persistence)
-    - [Schema](#schema)
-    - [Usage](#usage)
-  - [Development setup](#development-setup)
-    - [Prerequisites](#prerequisites)
-    - [Local development](#local-development)
-    - [Environment setup](#environment-setup)
-  - [Deployment](#deployment)
-    - [Cloudflare Pages](#cloudflare-pages)
-    - [Wrangler configuration](#wrangler-configuration)
-  - [Running tests](#running-tests)
-  - [Cloudflare free-tier limits](#cloudflare-free-tier-limits)
-  - [Environment variables](#environment-variables)
-    - [Required](#required)
-    - [Optional](#optional)
-  - [License](#license)
-  - [Author](#author)
-  - [Acknowledgments](#acknowledgments)
+- [What SeekOSINT does](#what-seekosint-does)
+- [Use cases](#use-cases)
+- [Architecture overview](#architecture-overview)
+- [Execution model](#execution-model)
+- [Data sources](#data-sources)
+- [Project structure](#project-structure)
+- [Key design decisions](#key-design-decisions)
+- [Caching strategy](#caching-strategy)
+- [Rate limiting](#rate-limiting)
+- [Circuit breakers](#circuit-breakers)
+- [Key rotation — GrayHatWarfare](#key-rotation--grayhatwarfare)
+- [D1 persistence](#d1-persistence)
+- [Development setup](#development-setup)
+- [Deployment](#deployment)
+- [Secrets and environment variables](#secrets-and-environment-variables)
+- [Running tests](#running-tests)
+- [Cloudflare free-tier limits](#cloudflare-free-tier-limits)
+- [Roadmap](#roadmap)
+- [License](#license)
+- [Author](#author)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
 ## What SeekOSINT does
 
-SeekOSINT is a **host intelligence tool** — paste in an IP address, a domain name, or an ASN and get back a unified report covering:
+SeekOSINT is a **host intelligence tool** — paste in an IP address, domain name, or ASN and get a unified report covering:
 
 | Category | What you get |
 |---|---|
 | Network | Open ports, CPEs, BGP prefixes, upstreams, peers, RIR |
-| Identity | RDAP registration, WHOIS contacts, registrar, nameservers |
-| Geo | Country, city, ISP, proxy/hosting/mobile flags |
-| Certificates | crt.sh cert history, SANs, issuer chain |
+| Identity | RDAP registration, contacts, registrar, nameservers |
+| Geo | Country, city, ISP, proxy / hosting / mobile flags |
+| Certificates | crt.sh history, SANs, issuer chain |
 | DNS | Passive DNS records, Robtex reverse/forward DNS |
 | Threats | URLhaus, ThreatFox, MalwareBazaar, Feodo, SSLBL |
 | CVEs | NVD + CIRCL enrichment for every CVE ID InternetDB reports |
 | Recon | GrayHatWarfare exposed buckets, Wayback CDX snapshots |
 
-Every source is queried in parallel. A failing or slow source degrades to a "source unavailable" badge — it never breaks the page.
+Every source is queried in parallel. A failing source degrades to an "unavailable" badge — it never breaks the page.
 
 ---
 
 ## Use cases
 
-**Security Operations**
-- Incident response: Quickly profile suspicious IPs from logs
-- Threat hunting: Correlate IOCs across multiple threat feeds
-- Vulnerability assessment: Identify exposed services and CVEs
-- Phishing investigation: Trace malicious domains and infrastructure
+**Security Operations** — Quickly profile suspicious IPs from logs, correlate IOCs, identify exposed services and CVEs, trace malicious domains.
 
-**Network Operations**
-- BGP troubleshooting: Inspect routing, upstreams, and peers
-- IP allocation research: RDAP/WHOIS lookups for network planning
-- DNS debugging: Historical DNS records and reverse lookups
-- Certificate monitoring: Track SSL/TLS cert changes over time
+**Network Operations** — Inspect BGP routing, RDAP/WHOIS allocation data, historical DNS records, SSL cert changes.
 
-**Penetration Testing**
-- Reconnaissance: Enumerate attack surface (ports, services, CPEs)
-- OSINT gathering: Discover exposed buckets, archived pages, subdomains
-- Infrastructure mapping: ASN enumeration and network relationships
+**Penetration Testing** — Enumerate ports/services/CPEs, discover exposed buckets, archived pages, subdomains, and ASN relationships.
 
-**Research & Education**
-- Malware analysis: Check C2 infrastructure against threat feeds
-- Academic research: Study internet infrastructure and threat landscape
-- Security training: Demonstrate OSINT techniques and data correlation
+**Threat Intelligence** — Check C2 infrastructure against five threat feeds in a single query.
 
-**Compliance & Risk**
-- Third-party risk assessment: Profile vendor infrastructure
-- Data leak detection: Find exposed cloud storage buckets
-- Shadow IT discovery: Identify unauthorized external services
+**Compliance & Risk** — Profile vendor infrastructure, detect exposed cloud storage, identify shadow IT.
 
 ---
 
@@ -139,358 +106,445 @@ Every source is queried in parallel. A failing or slow source degrades to a "sou
 Browser / curl
      │
      ▼
-┌─────────────────────────────────┐
-│  Cloudflare Pages               │
-│  Next.js App Router (SSR)       │
-│                                 │
-│  app/page.tsx  ──search form──► │
-│  app/host/[query]/page.tsx      │
-│    └─ fetches /api/lookup?q=…   │
-└────────────┬────────────────────┘
-             │ edge request
-             ▼
-┌─────────────────────────────────┐
-│  app/api/lookup/route.ts        │
-│  (Cloudflare Workers runtime)   │
-│  runtime = 'edge'               │
-└────────────┬────────────────────┘
-             │ runLookup()
-             ▼
-┌─────────────────────────────────┐
-│  worker/lookup.ts               │  ◄─── orchestrator
-│  4-layer Promise.allSettled     │
-└──┬──────┬──────┬────────────────┘
-   │      │      │
-   │      │      └─► Layer 4: GHW + Wayback
-   │      └────────► Layer 3: CVE enrichment (conditional)
-   └───────────────► Layers 1+2: 12 sources in parallel
-             │
-             ▼
-┌─────────────────┐   ┌──────────────────┐
-│ Cloudflare KV   │   │ Cloudflare D1    │
-│ (response cache)│   │ (search history) │
-└─────────────────┘   └──────────────────┘
+┌─────────────────────────────────────┐
+│  Cloudflare Pages                   │
+│  Next.js App Router (SSR)           │
+│                                     │
+│  app/page.tsx          search form  │
+│  app/host/[query]/page.tsx          │
+│    └─ fetches /api/lookup?q=…       │
+│  app/api/recent/route.ts            │
+│    └─ recent searches for homepage  │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  app/api/lookup/route.ts            │
+│  (Workers runtime via opennextjs)   │
+│  • input validation                 │
+│  • per-IP rate limiting (KV)        │
+│  • ctx.waitUntil(recordSearch())    │
+└──────────────┬──────────────────────┘
+               │ runLookup()
+               ▼
+┌─────────────────────────────────────┐
+│  worker/lookup.ts  — orchestrator   │
+│  4-layer Promise.allSettled         │
+└──┬─────────────────────────────────┘
+   │
+   ├─► Layer 1 (parallel): InternetDB · IPinfo · BGPView · RDAP
+   ├─► Layer 2 (parallel): crt.sh · PassiveDNS · Robtex
+   │                        URLhaus · ThreatFox · MalwareBazaar · Feodo · SSLBL
+   ├─► Layer 3 (after L1): NVD + CIRCL CVE enrichment (only if vulns found)
+   └─► Layer 4 (parallel): GrayHatWarfare · Wayback
+               │
+               ▼
+┌──────────────┐   ┌──────────────────┐
+│ KV           │   │ D1               │
+│ response     │   │ search history   │
+│ cache (24h)  │   │ recent queries   │
+└──────────────┘   └──────────────────┘
 ```
 
 ---
 
 ## Execution model
 
-Layers 1 and 2 run **simultaneously** in a single `Promise.allSettled` batch. Layers 3 and 4 fire after Layer 1 settles because they depend on its output (CVE IDs from InternetDB for Layer 3; query type for Layer 4).
+Layers 1 and 2 fire simultaneously in a single `Promise.allSettled` batch. Layers 3 and 4 start after Layer 1 settles because they depend on its output — CVE IDs from InternetDB drive Layer 3; query type determines Layer 4 relevance. Total wall-clock time ≈ max(Layer 1+2) + max(Layer 3+4).
+
+Force-refresh any query with `?refresh=1` to bypass the KV cache entirely and pull live data from every upstream.
 
 ---
 
 ## Data sources
 
-| Layer | Source | What it provides | Free tier |
+| Layer | Source | What it provides | Auth required |
 |---|---|---|---|
-| 1 | InternetDB | Open ports, CPEs, CVE IDs | ✅ Unlimited |
-| 1 | IPinfo | Geo, ISP, ASN, hosting/proxy flags | ✅ 50k/mo |
-| 1 | BGPView | BGP prefixes, upstreams, peers, RIR | ✅ Unlimited |
-| 1 | RDAP | Registration data, contacts, nameservers | ✅ Unlimited |
-| 2 | crt.sh | Certificate history, SANs, issuer chain | ✅ Unlimited |
-| 2 | PassiveDNS | Historical DNS records | ✅ Unlimited |
-| 2 | Robtex | Reverse/forward DNS | ✅ Unlimited |
-| 2 | URLhaus | Malware distribution URLs | ✅ Unlimited |
-| 2 | ThreatFox | IOC database | ✅ Unlimited |
-| 2 | MalwareBazaar | Malware samples | ✅ Unlimited |
-| 2 | Feodo Tracker | Botnet C2 tracker | ✅ Unlimited |
-| 2 | SSLBL | SSL blacklist | ✅ Unlimited |
-| 3 | NVD | CVE details, CVSS scores | ✅ 5 req/30s |
-| 3 | CIRCL | CVE enrichment | ✅ Unlimited |
-| 4 | GrayHatWarfare | Exposed S3/Azure/GCS buckets | ✅ 100 req/day |
-| 4 | Wayback | Historical snapshots | ✅ Rate-limited |
+| 1 | InternetDB | Open ports, CPEs, CVE IDs | No |
+| 1 | IPinfo / ip-api | Geo, ISP, ASN, hosting/proxy/mobile | No |
+| 1 | BGPView | BGP prefixes, upstreams, peers, RIR | No |
+| 1 | RDAP | Registration, contacts, nameservers, CIDR | No |
+| 2 | crt.sh | Certificate history, SANs, issuer chain | No |
+| 2 | PassiveDNS | Historical DNS records | No |
+| 2 | Robtex | Reverse/forward DNS, AS info | No |
+| 2 | URLhaus | Malware distribution URLs | `ABUSECH_KEY` |
+| 2 | ThreatFox | IOC database | `ABUSECH_KEY` |
+| 2 | MalwareBazaar | Malware sample metadata | `ABUSECH_KEY` |
+| 2 | Feodo Tracker | Botnet C2 IPs | No (bulk download) |
+| 2 | SSLBL | Malicious SSL certificates | No (bulk download) |
+| 3 | NVD | CVE details, CVSS v2/v3 scores | `NVD_KEY` (optional) |
+| 3 | CIRCL | CVE enrichment fallback | No |
+| 4 | GrayHatWarfare | Exposed S3/Azure/GCS buckets | `GRAYHATWARFARE_API_KEY_1..18` |
+| 4 | Wayback | Historical CDX snapshots | No |
+
+**Feodo and SSLBL** are fetched as bulk blocklists and cached in KV — no per-query upstream call.
 
 ---
 
 ## Project structure
 
 ```
-seek/
+SeekOSINT/
 ├── app/
-│   ├── page.tsx                    # Landing page with search form
-│   ├── host/[query]/page.tsx       # SSR host report page
-│   ├── api/lookup/route.ts         # Edge API route
-│   └── layout.tsx                  # Root layout
+│   ├── page.tsx                      # Homepage — search form + recent searches
+│   ├── layout.tsx                    # Root layout
+│   ├── globals.css
+│   ├── host/[query]/
+│   │   └── page.tsx                  # SSR host report page
+│   ├── api/
+│   │   ├── lookup/route.ts           # GET /api/lookup?q=&refresh=1
+│   │   ├── recent/route.ts           # GET /api/recent?limit=10
+│   │   └── admin/reset-breaker/      # POST — manual circuit-breaker reset
+│   └── components/
+│       ├── ExportButton.tsx          # ↓ export json (client, zero backend)
+│       ├── RecentSearches.tsx        # Recent queries from D1 (client)
+│       ├── DecryptedText.tsx
+│       └── AnimatedTagline.tsx
 ├── worker/
-│   ├── lookup.ts                   # Main orchestrator
-│   ├── sources/                    # Individual source fetchers
-│   │   ├── internetdb.ts
-│   │   ├── ipinfo.ts
-│   │   ├── bgpview.ts
-│   │   ├── rdap.ts
-│   │   ├── crtsh.ts
-│   │   ├── passivedns.ts
-│   │   ├── robtex.ts
-│   │   ├── urlhaus.ts
-│   │   ├── threatfox.ts
-│   │   ├── malwarebazaar.ts
-│   │   ├── feodo.ts
-│   │   ├── sslbl.ts
-│   │   ├── nvd.ts
-│   │   ├── circl.ts
-│   │   ├── grayhatwarfare.ts
-│   │   └── wayback.ts
-│   ├── cache.ts                    # KV cache wrapper
-│   ├── db.ts                       # D1 search history
-│   └── types.ts                    # TypeScript types
-├── components/
-│   ├── SearchForm.tsx
-│   ├── HostReport.tsx
-│   └── SourceBadge.tsx
+│   ├── lookup.ts                     # 4-layer orchestrator
+│   ├── index.ts
+│   └── sources/
+│       ├── internetdb.ts
+│       ├── ipapi.ts
+│       ├── bgpview.ts
+│       ├── rdap.ts
+│       ├── crtsh.ts
+│       ├── passivedns.ts
+│       ├── robtex.ts
+│       ├── abusech.ts                # URLhaus + ThreatFox + MalwareBazaar
+│       ├── nvd.ts                    # NVD CVE enrichment
+│       ├── grayhatwarfare.ts
+│       └── wayback.ts
 ├── lib/
+│   ├── types.ts                      # All TypeScript interfaces
+│   ├── cache.ts                      # KV cache wrapper (bypass on forceRefresh)
+│   ├── config.ts                     # All magic numbers: TTLs, timeouts, limits
+│   ├── errors.ts                     # Unified error format + ErrorCode enum
+│   ├── searches.ts                   # D1 helpers: recordSearch, getRecentSearches
+│   ├── ratelimit.ts                  # KV-based per-IP rate limiter
+│   ├── keyring.ts                    # GHW 18-key rotation
+│   ├── backoff.ts                    # Exponential backoff
+│   ├── logger.ts                     # Structured logging
+│   ├── merge.ts                      # Result merging
+│   ├── results.ts                    # SourceResult helpers
+│   ├── validate.ts                   # Query parsing (IPv4/v6/domain/ASN)
 │   └── utils.ts
-└── public/
-    └── publiceth.svg               # Donation QR code
+├── test/
+│   ├── cache.test.ts
+│   ├── keyring.test.ts
+│   ├── logger.test.ts
+│   ├── merge.test.ts
+│   ├── results.test.ts
+│   ├── validate.test.ts
+│   └── sources/
+├── docs/
+│   ├── ROADMAP.md
+│   ├── Spec.md
+│   └── LICENSE.md
+├── public/
+│   ├── publiceth.svg                 # Donation QR code
+│   └── schema.sql                    # D1 schema (for reference)
+├── schema.sql                        # D1 schema (apply with wrangler d1 execute)
+├── wrangler.toml
+├── next.config.ts
+├── open-next.config.ts
+└── vitest.config.ts
 ```
 
 ---
 
 ## Key design decisions
 
-### 1. Edge-first architecture
-- Next.js App Router with `runtime = 'edge'` for sub-50ms cold starts
-- Cloudflare Workers runtime for global distribution
-- No Node.js dependencies — pure Web APIs
+### Edge-first, no Node.js
+Workers runtime via `@opennextjs/cloudflare` — no `runtime = 'edge'` export needed. Pure Web APIs throughout. Cold starts under 50 ms globally.
 
-### 2. Layered execution
-- Layer 1: Critical sources (InternetDB, IPinfo, BGPView, RDAP)
-- Layer 2: Enrichment sources (certs, DNS, threats)
-- Layer 3: CVE enrichment (conditional on Layer 1 results)
-- Layer 4: Recon sources (GHW, Wayback)
+### Layered parallel execution
+Layers 1+2 fire together. Layer 3 (CVE enrichment) only runs if InternetDB finds vulns. Layer 4 runs in parallel with Layer 3. Total time ≈ slowest source in each wave, not the sum of all sources.
 
-### 3. Graceful degradation
-- Every source wrapped in try/catch
-- Timeouts prevent slow sources from blocking
-- Failed sources show "unavailable" badge
-- Page always renders, even if all sources fail
+### Graceful degradation
+Every source is wrapped in a circuit breaker + try/catch. A failed source becomes an `{ status: 'error' }` badge. The page always renders.
 
-### 4. Aggressive caching
-- KV cache with 24h TTL for all sources
-- Cache key includes source name + query
-- Cache hits bypass external API calls entirely
-- D1 stores search history for analytics
+### Aggressive KV caching
+Each source has its own 24-hour TTL cache keyed by `source:normalised_query`. Cache hits bypass external calls entirely. `?refresh=1` threads `forceRefresh: true` through every fetcher to bypass cache on demand.
 
-### 5. Free-tier optimization
-- GrayHatWarfare: 18-key rotation (1,800 req/day)
-- NVD: Request batching + 6s delay between calls
-- Wayback: Exponential backoff on rate limits
-- IPinfo: 50k/mo shared across all users
+### Free-tier optimization
+GrayHatWarfare has 18-key rotation (1,800 req/day). NVD uses request batching. Feodo/SSLBL are downloaded as bulk lists and cached, not queried per-IP.
 
----
-
-## TypeScript types
-
-```typescript
-export interface LookupResult {
-  query: string;
-  queryType: 'ip' | 'domain' | 'asn';
-  timestamp: number;
-  sources: SourceResult[];
-  cacheHits: number;
-  totalTime: number;
-}
-
-export interface SourceResult {
-  name: string;
-  status: 'success' | 'error' | 'unavailable';
-  data?: any;
-  error?: string;
-  cached?: boolean;
-  time?: number;
-}
-
-export interface Env {
-  SEEK_CACHE: KVNamespace;
-  SEEK_DB: D1Database;
-  GRAYHATWARFARE_API_KEY_1: string;
-  GRAYHATWARFARE_API_KEY_2: string;
-  // ... 16 keys total
-  NVD_API_KEY: string;
-  ABUSECH_KEY: string;
-}
-```
+### Fire-and-forget D1 writes
+`recordSearch()` is called inside `ctx.waitUntil()` — it does not add any latency to the API response. D1 writes happen after the response is flushed.
 
 ---
 
 ## Caching strategy
 
-### KV cache structure
 ```typescript
-const cacheKey = `${sourceName}:${query}`;
-const cachedData = await env.SEEK_CACHE.get(cacheKey, 'json');
+// lib/cache.ts
+export async function cacheGet<T>(
+  kv: KVNamespace,
+  key: string,
+  bypass?: boolean,        // true when ?refresh=1
+): Promise<T | null>
 
-if (cachedData) {
-  return { ...cachedData, cached: true };
-}
-
-const freshData = await fetchSource(query);
-await env.SEEK_CACHE.put(cacheKey, JSON.stringify(freshData), {
-  expirationTtl: 86400 // 24 hours
-});
+export async function cacheSet<T>(
+  kv: KVNamespace,
+  key: string,
+  value: T,
+  ttlSeconds?: number,     // default: CONFIG.CACHE_TTL_DEFAULT (86400)
+): Promise<void>
 ```
 
-### Cache invalidation
-- Automatic expiration after 24h
-- Manual purge via Cloudflare dashboard
-- No cache for errors (always retry)
+Cache keys follow the pattern `source:normalised_query` — e.g. `internetdb:1.1.1.1`, `crtsh:example.com`.
+
+Errors are never cached — a failed fetch will always retry on the next request.
 
 ---
 
-## Key rotation
+## Rate limiting
 
-### GrayHatWarfare (18 keys)
-```typescript
-const keyIndex = Math.floor(Math.random() * 18) + 1;
-const apiKey = env[`GRAYHATWARFARE_API_KEY_${keyIndex}`];
-const username = env[`GRAYHATWARFARE_USERNAME_${keyIndex}`];
+KV-based sliding window: **100 requests per IP per hour**. Implemented in `lib/ratelimit.ts`, enforced in `app/api/lookup/route.ts` before any lookup runs.
+
+Rate-limit headers are returned on every response:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1716912000
 ```
 
-**Daily capacity**: 18 keys × 100 req/day = 1,800 requests/day
+On exhaustion, the API returns `429` with `Retry-After`.
+
+---
+
+## Circuit breakers
+
+Each source has a circuit breaker tracked in KV. If a source exceeds **50% failure rate** in a 5-minute window, the breaker opens and the source is skipped (returns `{ status: 'skipped' }`) for **15 minutes**, then auto-recovers.
+
+The current state of every breaker is included in `meta.circuitBreakers` on every API response.
+
+To manually reset a breaker in production:
+
+```bash
+curl -X POST https://seekosint.pages.dev/api/admin/reset-breaker \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source": "nvd"}'
+```
+
+---
+
+## Key rotation — GrayHatWarfare
+
+GrayHatWarfare allows 100 requests/day per API key. SeekOSINT rotates across up to 18 keys for an effective 1,800 requests/day:
+
+```typescript
+// lib/keyring.ts — picks a key with remaining quota, round-robin
+const key = await keyRing.next(env, 'GRAYHATWARFARE_API_KEY')
+```
+
+Keys are named `GRAYHATWARFARE_API_KEY_1` through `GRAYHATWARFARE_API_KEY_18` and stored as Wrangler secrets.
 
 ---
 
 ## D1 persistence
 
-### Schema
+### Schema (`schema.sql`)
+
 ```sql
-CREATE TABLE searches (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  query TEXT NOT NULL,
-  query_type TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
-  cache_hits INTEGER,
-  total_time INTEGER
+CREATE TABLE IF NOT EXISTS searches (
+  id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  query       TEXT NOT NULL,
+  query_type  TEXT NOT NULL CHECK (query_type IN ('ip','domain','asn')),
+  result_json TEXT NOT NULL,
+  duration_ms INTEGER,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE INDEX idx_timestamp ON searches(timestamp);
-CREATE INDEX idx_query ON searches(query);
+CREATE INDEX IF NOT EXISTS idx_searches_query
+  ON searches (query, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS saved_targets (
+  id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  query      TEXT NOT NULL UNIQUE,
+  label      TEXT,
+  notes      TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 ```
 
-### Usage
+### Apply schema
+
+```bash
+wrangler d1 execute seek-osint --file=schema.sql
+```
+
+### Helper functions (`lib/searches.ts`)
+
 ```typescript
-await env.SEEK_DB.prepare(
-  'INSERT INTO searches (query, query_type, timestamp, cache_hits, total_time) VALUES (?, ?, ?, ?, ?)'
-).bind(query, queryType, Date.now(), cacheHits, totalTime).run();
+// Write a search row (fire-and-forget safe)
+await recordSearch(db, query, queryType, resultJson, durationMs)
+
+// Read last N distinct queries for the homepage
+const recent = await getRecentSearches(db, 10)
+// → [{ query: '1.1.1.1', query_type: 'ip', created_at: 1716912000 }, ...]
 ```
 
 ---
-
 ## Development setup
 
 ### Prerequisites
+
 - Node.js 18+
-- Cloudflare account (free tier)
-- Wrangler CLI
+- Wrangler CLI (`npm i -g wrangler`)
+- Cloudflare account (free tier is sufficient)
 
 ### Local development
+
 ```bash
-# Install dependencies
+git clone https://github.com/Teycir/SeekOSINT
+cd SeekOSINT
 npm install
 
-# Create .dev.vars for local secrets
-cp .env .dev.vars
+# Copy example env — fill in your keys
+cp .env.example .env
 
-# Run dev server
+# Run Next.js dev server (KV/D1 stubbed via Wrangler local)
 npm run dev
 ```
 
-### Environment setup
+The app is available at `http://localhost:3000`. In local dev, KV and D1 use Wrangler's local SQLite-backed emulation — no Cloudflare account access needed for basic testing.
+
+### Create Cloudflare resources (first time)
+
 ```bash
-# Create KV namespace
-wrangler kv:namespace create SEEK_CACHE
+# Create KV namespace — copy the ID into wrangler.toml
+wrangler kv namespace create KV
 
-# Create D1 database
-wrangler d1 create seek-db
-wrangler d1 execute seek-db --file=schema.sql
+# Create D1 database — copy the ID into wrangler.toml
+wrangler d1 create seek-osint
 
-# Add secrets
-wrangler secret put GRAYHATWARFARE_API_KEY_1
-wrangler secret put NVD_API_KEY
-wrangler secret put ABUSECH_KEY
+# Apply schema
+wrangler d1 execute seek-osint --file=schema.sql
 ```
 
 ---
 
 ## Deployment
 
-### Cloudflare Pages
-```bash
-# Build
-npm run build
+### Build and deploy
 
-# Deploy
-wrangler pages deploy .next
+```bash
+# Build with OpenNext for Cloudflare Pages
+npm run build          # next build + opennextjs-cloudflare
+npm run deploy         # wrangler pages deploy .open-next
 ```
 
-### Wrangler configuration
+Or push to `main` — Cloudflare Pages auto-builds on every push if connected.
+
+### Wrangler configuration (`wrangler.toml`)
+
 ```toml
-name = "seek"
-compatibility_date = "2024-01-01"
+name = "seekosint"
+pages_build_output_dir = ".open-next"
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
-binding = "SEEK_CACHE"
-id = "your-kv-id"
+binding = "KV"
+id = "<your-kv-id>"
 
 [[d1_databases]]
-binding = "SEEK_DB"
-database_name = "seek-db"
-database_id = "your-d1-id"
+binding = "DB"
+database_name = "seek-osint"
+database_id = "<your-d1-id>"
 ```
+
+---
+
+## Secrets and environment variables
+
+All secrets are stored as Wrangler secrets — never in source code or `.env`.
+
+### Required secrets
+
+```bash
+wrangler secret put NVD_KEY             # NVD API key (optional but higher rate limits)
+wrangler secret put ABUSECH_KEY         # abuse.ch API key (URLhaus/ThreatFox/MalwareBazaar)
+wrangler secret put ADMIN_TOKEN         # Bearer token for /api/admin/* endpoints
+
+# GrayHatWarfare — repeat for each key you have (1–18)
+wrangler secret put GRAYHATWARFARE_API_KEY_1
+wrangler secret put GRAYHATWARFARE_API_KEY_2
+# ... up to GRAYHATWARFARE_API_KEY_18
+```
+
+### `.env.example` (local dev only)
+
+```bash
+NVD_KEY=your_nvd_key_here
+ABUSECH_KEY=your_abusech_key_here
+ADMIN_TOKEN=change_me
+GRAYHATWARFARE_API_KEY_1=your_ghw_key_here
+```
+
+> **Security note:** Never commit `.env`. It is in `.gitignore`. If secrets were ever committed, rotate all keys and clean git history with BFG (`bfg --delete-files .env`).
 
 ---
 
 ## Running tests
 
 ```bash
-# Unit tests
+# All unit tests
 npm test
 
-# Integration tests (requires .dev.vars)
-npm run test:integration
+# Watch mode
+npm run test:watch
 
-# Test specific source
-npm test -- worker/sources/internetdb.test.ts
+# Coverage report
+npm run test:coverage
+
+# Specific file
+npm test -- test/cache.test.ts
 ```
+
+Tests use Vitest + Miniflare for Worker environment simulation. See `vitest.config.ts`.
 
 ---
 
 ## Cloudflare free-tier limits
 
-| Service | Free tier | Seek usage |
+| Service | Free allowance | Estimated SeekOSINT usage |
 |---|---|---|
-| Pages | 500 builds/mo | ~10 deploys/mo |
-| Workers | 100k req/day | ~5k req/day |
-| KV | 100k reads/day | ~3k reads/day |
-| KV | 1k writes/day | ~500 writes/day |
-| D1 | 5M rows read/day | ~5k rows/day |
-| D1 | 100k rows write/day | ~500 rows/day |
+| Pages builds | 500/month | ~10 deploys/month |
+| Workers requests | 100k/day | ~5k lookups/day |
+| KV reads | 100k/day | ~40k reads/day (8 sources × 5k) |
+| KV writes | 1k/day | ~500 writes/day |
+| D1 reads | 5M rows/day | ~5k rows/day |
+| D1 writes | 100k rows/day | ~500 rows/day |
 
-**Estimated capacity**: 5,000 unique lookups/day on free tier
+**Estimated capacity:** ~5,000 unique lookups/day comfortably within free tier.
+
+High-traffic mitigation: caching means most lookups consume 0 upstream calls and very few KV writes. Popular queries are nearly free after the first hit.
 
 ---
 
-## Environment variables
+## Roadmap
 
-### Required
-```bash
-# GrayHatWarfare (16 key pairs)
-GRAYHATWARFARE_API_KEY_1=...
-GRAYHATWARFARE_USERNAME_1=...
-# ... repeat for keys 2-16
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased roadmap.
 
-# NVD API
-NVD_API_KEY=...
+**Completed highlights:**
+- ✅ Per-IP rate limiting (KV sliding window, 100 req/hour)
+- ✅ Unified error format (`lib/errors.ts`, `ErrorCode` enum)
+- ✅ Centralised config (`lib/config.ts` — all TTLs, timeouts, limits)
+- ✅ Circuit breakers per source with `/api/admin/reset-breaker`
+- ✅ `?refresh=1` force-cache-bypass threads through all 11 fetchers
+- ✅ JSON export button (client-side, zero backend work)
+- ✅ Recent searches on homepage (D1, deduped, fire-and-forget write)
 
-# abuse.ch (URLhaus, ThreatFox, MalwareBazaar)
-ABUSECH_KEY=...
-```
-
-### Optional
-```bash
-# IPinfo (defaults to free tier)
-IPINFO_TOKEN=...
-```
+**Up next:**
+- [ ] `wrangler secret put` for all remaining secrets
+- [ ] BFG to scrub `.env` from git history
+- [ ] Batch CVE enrichment (max 10 concurrent)
+- [ ] Multi-query batch lookup (paste list of IPs)
 
 ---
 
@@ -500,20 +554,12 @@ IPINFO_TOKEN=...
 
 Copyright © 2025 Teycir Ben Soltane <teycir@pxdmail.net>
 
-Permitted use:
-- Personal use
-- Research and education
-- Non-commercial projects
-- Internal business tools
+Permitted: personal use, research, education, non-commercial projects, internal business tools.  
+Restricted: commercial SaaS offerings, reselling as a service, competitive products.
 
-Restricted use:
-- Commercial SaaS offerings
-- Reselling as a service
-- Competitive products
+After 4 years from the release date, this software converts to Apache 2.0.
 
-After 4 years from release date, this software converts to Apache 2.0 license.
-
-See [LICENSE](LICENSE) for full terms.
+See [docs/LICENSE.md](docs/LICENSE.md) for full terms.
 
 ---
 
@@ -527,17 +573,17 @@ GitHub: [@Teycir](https://github.com/Teycir)
 
 ## Acknowledgments
 
-- InternetDB (Shodan)
-- IPinfo
-- BGPView
-- RDAP
-- crt.sh
-- PassiveDNS
-- Robtex
-- abuse.ch (URLhaus, ThreatFox, MalwareBazaar, Feodo, SSLBL)
-- NVD (NIST)
-- CIRCL
-- GrayHatWarfare
-- Internet Archive (Wayback Machine)
+- [InternetDB](https://internetdb.shodan.io) (Shodan)
+- [IPinfo](https://ipinfo.io) / [ip-api](https://ip-api.com)
+- [BGPView](https://bgpview.io)
+- [RDAP](https://rdap.org)
+- [crt.sh](https://crt.sh)
+- [PassiveDNS](https://passivedns.cn)
+- [Robtex](https://www.robtex.com)
+- [abuse.ch](https://abuse.ch) — URLhaus, ThreatFox, MalwareBazaar, Feodo, SSLBL
+- [NVD](https://nvd.nist.gov) (NIST)
+- [CIRCL](https://www.circl.lu/services/cve-search/)
+- [GrayHatWarfare](https://grayhatwarfare.com)
+- [Internet Archive](https://web.archive.org) (Wayback Machine)
 
 ---

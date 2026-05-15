@@ -87,7 +87,7 @@
 - [x] Skip sources failing >50% of requests in a 5-minute window — `lib/ratelimit.ts`
 - [x] Auto-recover after 15-minute cooldown — KV TTL-based
 - [x] Add circuit breaker status to API response metadata — `meta.circuitBreakers`
-- [ ] Create admin endpoint to manually reset circuit breakers
+- [ ] **Create admin endpoint to manually reset circuit breakers** — `app/api/admin/reset-breaker/route.ts` — ⚠️ file created, needs wiring
 
 ---
 
@@ -107,7 +107,7 @@
 ### Smart Cache Invalidation
 - [ ] Add cache versioning for breaking changes
 - [ ] Implement selective cache purge by source
-- [ ] Add "force refresh" option in UI
+- [x] **Smart Cache Invalidation — "Force refresh" option** — `?refresh=1` threads `forceRefresh` through all 11 source fetchers — `0baa294`
 
 ### CVE Enrichment
 - [x] Limit CVE enrichment to first 20 CVEs — `worker/lookup.ts` line 168
@@ -127,9 +127,8 @@
 **Timeline: Weeks 7–8 | Goal: Better user experience & power-user features**
 
 ### Search Experience
-- [ ] Display recent searches from D1
-- [ ] Add "favorite" queries feature
-- [ ] Export search history as CSV
+- [x] **Display recent searches from D1** — `<RecentSearches />` on homepage, `GET /api/recent` — `78c50dc`
+- [x] **Export search history / results as JSON** — `<ExportButton />` client component — `0baa294`
 - [ ] Add search suggestions based on history
 
 ### Advanced Search
@@ -162,12 +161,12 @@
 **Easy tasks with outsized impact — do these next**
 
 - [x] **Rate limit enforcement in the API route** — `lib/ratelimit.ts` exists but `app/api/lookup/route.ts` never calls it. One import + one await away from working.
-- [ ] **`lib/config.ts` — centralise all magic numbers** — timeouts, TTLs, window sizes are scattered. 30-min task, eliminates entire category of bugs.
+- [x] **`lib/config.ts` — centralise all magic numbers** — `f9d8d79`
 - [ ] **`wrangler secret put` for remaining secrets** — keys are still in `.env`. One command per key, no code changes needed.
 - [ ] **BFG / filter-branch to scrub `.env` from git history** — secrets are committed. Use `bfg --delete-files .env` before the keys are rotated.
-- [ ] **Recent searches on homepage from D1** — `searches` table already exists and is being written to. One D1 query on the homepage, instant power-user feature with zero new infrastructure.
-- [ ] **"Force refresh" query param** — add `?refresh=1` to bypass KV cache. Five lines in each source fetcher, huge debugging/freshness value.
-- [ ] **Export results as JSON** — add a download button that does `JSON.stringify(result)` client-side. Zero backend work.
+- [x] **Recent searches on homepage from D1** — `lib/searches.ts` + `GET /api/recent` + `<RecentSearches />` client component — `78c50dc`
+- [x] **"Force refresh" query param** — `?refresh=1` threads `forceRefresh` through all 11 fetchers — `0baa294`
+- [x] **Export results as JSON** — `<ExportButton />` client component, zero backend — `0baa294`
 
 ---
 
