@@ -5,3 +5,6 @@ node_modules
 .next
 .open-next
 .wrangler
+# Build artifacts
+build.log
+tsconfig.tsbuildinfo
