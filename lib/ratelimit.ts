@@ -50,10 +50,14 @@ const RL_KV_PREFIX      = RATE_LIMIT.KV_PREFIX
 /**
  * Check (and increment) the per-IP counter in KV.
  * Returns { allowed: false } when the limit is exceeded.
+ *
+ * @param cost  Number of quota slots to consume (default 1). Used by batch
+ *              routes to charge the full batch size in one call.
  */
 export async function checkRateLimit(
   ip: string,
   kv: KVNamespace,
+  cost = 1,
   maxRequests = RL_MAX_REQUESTS,
   windowSeconds = RL_WINDOW_SECONDS,
 ): Promise<RateLimitResult> {
@@ -63,19 +67,19 @@ export async function checkRateLimit(
     const raw = await kv.get(key, 'text')
     const current = raw ? parseInt(raw, 10) : 0
 
-    if (current >= maxRequests) {
-      // Already at or over limit — do NOT increment; key TTL tells us reset time
+    if (current + cost > maxRequests) {
+      // Would exceed limit — do NOT increment
       const meta = await kv.getWithMetadata<{ expiration?: number }>(key)
       const expiration = meta.metadata?.expiration ?? 0
       const resetInSeconds = expiration
         ? Math.max(0, expiration - Math.floor(Date.now() / 1000))
         : windowSeconds
 
-      return { allowed: false, remaining: 0, resetInSeconds }
+      return { allowed: false, remaining: Math.max(0, maxRequests - current), resetInSeconds }
     }
 
-    // Increment.  On first write, set the window TTL so it auto-resets.
-    const next = current + 1
+    // Consume `cost` slots. On first write, set the window TTL so it auto-resets.
+    const next = current + cost
     await kv.put(key, String(next), {
       expirationTtl: windowSeconds,
     })
