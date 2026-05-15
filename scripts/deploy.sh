@@ -1,4 +1,5 @@
 #!/bin/bash
 set -e
+
 npm run pages:build
-wrangler deploy
+wrangler pages deploy --project-name=seekosint --branch=master --commit-dirty=true
