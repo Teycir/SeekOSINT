@@ -1,1 +1,13 @@
-config/wrangler.toml
+name = "seekosint"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".open-next"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "9848ade51876441085062de12d3531a5"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "seek-osint"
+database_id = "7229602c-e1a3-440e-82f8-1b7912eed83a"
