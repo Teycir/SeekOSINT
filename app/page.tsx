@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { parseQuery } from '../lib/validate'
 import DecryptedText from './components/DecryptedText'
 import { AnimatedTagline } from './components/AnimatedTagline'
+import { RecentSearches } from './components/RecentSearches'
 
 export default function HomePage() {
   const router = useRouter()
@@ -97,6 +98,9 @@ export default function HomePage() {
         <p className="text-center text-xs text-neon-red/30 font-mono">
           InternetDB · IPinfo · BGPView · RDAP · crt.sh · PassiveDNS · and 11 more
         </p>
+
+        {/* Recent searches — client-fetched from D1, hidden when empty */}
+        <RecentSearches />
       </div>
     </main>
   )

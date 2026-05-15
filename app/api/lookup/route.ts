@@ -11,6 +11,7 @@ import { parseQuery } from '../../../lib/validate'
 import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
+import { recordSearch } from '../../../lib/searches'
 import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
@@ -56,6 +57,16 @@ export async function GET(req: Request): Promise<Response> {
   // ── Lookup ──────────────────────────────────────────────────────────────────
   try {
     const result = await runLookup({ ...query, forceRefresh: refresh }, env as unknown as Env, ctx)
+
+    // Fire-and-forget: persist search to D1 (does not block the response)
+    const db = (env as unknown as Env).DB
+    if (db) {
+      ctx.waitUntil(
+        recordSearch(db, query.normalised, query.type, JSON.stringify(result), result.meta.durationMs)
+          .catch(err => console.error('[api/lookup] recordSearch failed', err)),
+      )
+    }
+
     return Response.json(result, {
       headers: {
         'X-RateLimit-Limit':     '100',
