@@ -9,7 +9,7 @@ If this project helps your work, support ongoing maintenance and new features.
 `0x11282eE5726B3370c8B480e321b3B2aA13686582`
 
 <a href="https://etherscan.io/address/0x11282eE5726B3370c8B480e321b3B2aA13686582">
-  <img src="publiceth.svg" alt="Ethereum donation QR code" width="220" />
+  <img src="public/publiceth.svg" alt="Ethereum donation QR code" width="220" />
 </a>
 
 _Scan the QR code or copy the wallet address above._
@@ -20,7 +20,7 @@ _Scan the QR code or copy the wallet address above._
 
 # SeekOSINT
 
-> **Free-tier OSINT intelligence on any IP, domain, or ASN** — 17 data sources, 4 execution layers, sub-second cached responses. Built on Next.js + Cloudflare Pages/Workers/KV/D1.
+> **Unified threat intelligence and network reconnaissance** — Query any IP, domain, or ASN to get instant security posture, infrastructure details, and threat correlations from 17 sources.
 
 **Live at:** https://seekosint.pages.dev
 
@@ -44,7 +44,8 @@ $ seek 1.1.1.1
 
 - [SeekOSINT](#seekosint)
   - [Table of Contents](#table-of-contents)
-  - [What Seek does](#what-seek-does)
+  - [What SeekOSINT does](#what-seekosint-does)
+  - [Use cases](#use-cases)
   - [Architecture overview](#architecture-overview)
   - [Execution model](#execution-model)
   - [Data sources](#data-sources)
@@ -98,6 +99,37 @@ SeekOSINT is a **host intelligence tool** — paste in an IP address, a domain n
 | Recon | GrayHatWarfare exposed buckets, Wayback CDX snapshots |
 
 Every source is queried in parallel. A failing or slow source degrades to a "source unavailable" badge — it never breaks the page.
+
+---
+
+## Use cases
+
+**Security Operations**
+- Incident response: Quickly profile suspicious IPs from logs
+- Threat hunting: Correlate IOCs across multiple threat feeds
+- Vulnerability assessment: Identify exposed services and CVEs
+- Phishing investigation: Trace malicious domains and infrastructure
+
+**Network Operations**
+- BGP troubleshooting: Inspect routing, upstreams, and peers
+- IP allocation research: RDAP/WHOIS lookups for network planning
+- DNS debugging: Historical DNS records and reverse lookups
+- Certificate monitoring: Track SSL/TLS cert changes over time
+
+**Penetration Testing**
+- Reconnaissance: Enumerate attack surface (ports, services, CPEs)
+- OSINT gathering: Discover exposed buckets, archived pages, subdomains
+- Infrastructure mapping: ASN enumeration and network relationships
+
+**Research & Education**
+- Malware analysis: Check C2 infrastructure against threat feeds
+- Academic research: Study internet infrastructure and threat landscape
+- Security training: Demonstrate OSINT techniques and data correlation
+
+**Compliance & Risk**
+- Third-party risk assessment: Profile vendor infrastructure
+- Data leak detection: Find exposed cloud storage buckets
+- Shadow IT discovery: Identify unauthorized external services
 
 ---
 
