@@ -47,7 +47,6 @@ async function getRDAPBaseForIP(
   ip: string,
   kv: KVNamespace,
 ): Promise<string> {
-  // ARIN is the default — if it 404s we let callers fall back
   let boot = await cacheGet<BootstrapEntry>(kv, CacheKey.rdapBootIP())
   if (!boot) {
     try {
@@ -62,15 +61,28 @@ async function getRDAPBaseForIP(
       // Fall through to ARIN default
     }
   }
+
+  // Convert a dotted-decimal IP to a 32-bit unsigned integer
+  function ipToInt(addr: string): number {
+    return addr.split('.').reduce((acc, o) => ((acc << 8) | parseInt(o, 10)) >>> 0, 0) >>> 0
+  }
+
+  // Parse a CIDR like "1.2.3.0/24" and check if the given ipInt falls within it
+  function cidrContains(cidr: string, ipInt: number): boolean {
+    const [network, bitsStr] = cidr.split('/')
+    if (!network || !bitsStr) return false
+    const bits = parseInt(bitsStr, 10)
+    if (isNaN(bits) || bits < 0 || bits > 32) return false
+    const mask = bits === 0 ? 0 : (~((1 << (32 - bits)) - 1)) >>> 0
+    const netInt = ipToInt(network)
+    return (ipInt & mask) === (netInt & mask)
+  }
+
   if (boot) {
+    const ipInt = ipToInt(ip)
     for (const [ranges, urls] of boot.services) {
       for (const cidr of ranges) {
-        const base = parseInt(cidr.split('.')[0] ?? '0', 10)
-        const bits = parseInt(cidr.split('/')[1] ?? '0', 10)
-        const mask = ~((1 << (32 - bits)) - 1) >>> 0
-        const ipInt = ip.split('.').reduce((acc, o) => (acc << 8) | parseInt(o, 10), 0) >>> 0
-        const netInt = (base << 24) >>> 0
-        if ((ipInt & mask) === (netInt & mask) && urls[0]) return urls[0]
+        if (cidrContains(cidr, ipInt) && urls[0]) return urls[0]
       }
     }
   }

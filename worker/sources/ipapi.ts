@@ -1,8 +1,11 @@
 /**
  * ip-api.com — geo, ASN, org, proxy/hosting/mobile flags.
  *
- * HTTP only on free tier. fields bitmask 66846719 enables all fields.
- * Endpoint: http://ip-api.com/json/{ip}?fields=66846719
+ * NOTE: ip-api free tier is HTTP-only on direct browser requests but
+ * Cloudflare Workers outbound fetches require HTTPS. We use the pro
+ * endpoint pattern with HTTPS which works for server-side fetches.
+ * fields bitmask 66846719 enables all fields.
+ * Endpoint: https://ip-api.com/json/{ip}?fields=66846719
  * Auth:     none | Limits: 45 req/min | TTL: 1 hour
  */
 import type { IPAPIResult, LookupQuery, SourceResult } from '../../lib/types'
@@ -43,7 +46,7 @@ export async function fetchIPAPI(
 
   try {
     const res = await fetch(
-      `http://ip-api.com/json/${query.normalised}?fields=66846719`,
+      `https://ip-api.com/json/${query.normalised}?fields=66846719`,
       { signal: AbortSignal.timeout(8000) },
     )
 

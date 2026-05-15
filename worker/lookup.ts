@@ -4,7 +4,7 @@
  * Layer 1  always runs (Promise.allSettled — 7 sources)
  * Layer 2  runs in parallel with Layer 1 (no dependency)
  * Layer 3  fires only when InternetDB returns CVE IDs
- * Layer 4  domain queries only (GHW); Wayback always runs for domains
+ * Layer 4  domain queries only (GHW + Wayback); skipped for IP/ASN
  *
  * Non-blocking D1 persistence via ctx.waitUntil().
  */
@@ -16,6 +16,7 @@ import type {
   InternetDBResult,
   LookupQuery,
   SourceResult,
+  WaybackResult,
 } from '../lib/types'
 import { KeyRing } from '../lib/keyring'
 import { mergeResults } from '../lib/merge'
@@ -111,17 +112,24 @@ export async function runLookup(
 
   // ── Layer 3: CVE enrichment — only if InternetDB found CVEs ──────────────
   const idbData = unwrap<InternetDBResult>(internetdbResult)
-  const cveIds = idbData?.vulns ?? []
+  // Cap at 20 CVEs to avoid stampeding NVD with unbounded concurrent requests
+  const cveIds = (idbData?.vulns ?? []).slice(0, 20)
 
   const vulns = await Promise.allSettled(
     cveIds.map(id => fetchCVEFull(id, env.KV, env.NVD_KEY)),
   ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
 
   // ── Layer 4: Bucket recon + Wayback — domain queries only ────────────────
-  const [bucketsResult, waybackResult] = await Promise.allSettled([
-    fetchGHWForQuery(query, env.KV, ghwRing),
-    fetchWayback(query, env.KV),
-  ])
+  // Skip entirely for IP/ASN queries to avoid two no-op promise slots
+  const [bucketsResult, waybackResult] = query.type === 'domain'
+    ? await Promise.allSettled([
+        fetchGHWForQuery(query, env.KV, ghwRing),
+        fetchWayback(query, env.KV),
+      ])
+    : [
+        { status: 'fulfilled' as const, value: skipped<BucketResult[]>('ghw') },
+        { status: 'fulfilled' as const, value: skipped<WaybackResult[]>('wayback') },
+      ]
 
   // ── Merge & return ────────────────────────────────────────────────────────
   const result = mergeResults({

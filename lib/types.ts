@@ -184,6 +184,9 @@ export interface SSLBLEntry {
   Listingdate: string
   SuspiciousReason: string
   Listingtime: string
+  DstIP?: string       // destination IP — present in the JSON feed, used for IP lookup matching
+  DstPort?: number
+  Subject?: string
 }
 
 // ─── Layer 3: CVE enrichment ───────────────────────────────────────────────────

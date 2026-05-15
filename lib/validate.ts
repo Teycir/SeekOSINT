@@ -1,7 +1,9 @@
 import type { LookupQuery, QueryType } from './types'
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/
-const IPV6_RE = /^[0-9a-fA-F:]{2,39}$/
+// Validates compressed and full IPv6: segments of 1-4 hex digits separated by
+// colons, with at most one "::" double-colon, and 2–8 groups total.
+const IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$|^::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)+:$|^::$/
 const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
 const ASN_RE = /^as\d+$/i
 

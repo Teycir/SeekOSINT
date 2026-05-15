@@ -30,6 +30,7 @@ export const CacheKey = {
   crtsh:       (domain: string)  => `crtsh:${domain}`,
   passivedns:  (query: string)   => `passivedns:${query}`,
   robtex:      (ip: string)      => `robtex:${ip}`,
+  malwarebazaar: (hash: string)   => `malwarebazaar:${hash}`,
   urlhaus:     (query: string)   => `urlhaus:${query}`,
   threatfox:   (query: string)   => `threatfox:${query}`,
   feodoList:   ()                => 'feodo:blocklist',

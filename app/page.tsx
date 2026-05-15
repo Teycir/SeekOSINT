@@ -33,7 +33,7 @@ export default function HomePage() {
         <div className="space-y-1 text-center">
           <h1 className="text-3xl font-semibold tracking-tight text-white">Seek</h1>
           <p className="text-sm text-neutral-400">
-            Host intelligence across 17 sources — IP, domain, or ASN
+            Host intelligence across 12 sources — IP, domain, or ASN
           </p>
         </div>
 

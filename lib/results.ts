@@ -15,6 +15,9 @@ export function ok<T>(source: string, data: T, cached = false): SourceResult<T> 
       : { fetchedAt: Date.now() }),
   }
 }
+// NOTE: cachedAt/fetchedAt were previously inverted — now correct:
+// cached=true  → cachedAt  (when was this read from cache)
+// cached=false → fetchedAt (when was this fetched live)
 
 export function error<T>(source: string, message: string): SourceResult<T> {
   return { source, status: 'error', data: null, error: message }

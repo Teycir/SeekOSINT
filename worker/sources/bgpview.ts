@@ -44,12 +44,22 @@ export async function fetchBGPView(
     const json = await res.json<any>()
     const d = json.data
 
-    // Normalise whether we queried /ip or /asn — both nest ASN info differently
-    const asnObj = query.type === 'asn' ? d : d?.asn
+    // /ip and /asn responses have very different shapes.
+    // /ip: { rir_allocation: { asn, name, ... }, prefixes: { ipv4: [...] }, ... }
+    // /asn: { asn, name, description, prefixes: [...], upstreams: [...], peers: [...] }
+    const asnObj = query.type === 'asn' ? d : d?.rir_allocation
     const prefixes: string[] =
       query.type === 'asn'
         ? (d?.prefixes ?? []).map((p: { prefix: string }) => p.prefix)
         : (d?.prefixes?.ipv4 ?? []).map((p: { prefix: string }) => p.prefix)
+
+    // peers/upstreams only exist on the /asn endpoint
+    const upstreams: number[] = query.type === 'asn'
+      ? (d?.upstreams ?? []).map((u: { asn: number }) => u.asn)
+      : []
+    const peers: number[] = query.type === 'asn'
+      ? (d?.peers ?? []).map((p: { asn: number }) => p.asn)
+      : []
 
     const data: BGPViewResult = {
       asn:         asnObj?.asn ?? 0,
@@ -57,9 +67,9 @@ export async function fetchBGPView(
       description: asnObj?.description ?? '',
       country:     asnObj?.country_code ?? '',
       prefixes,
-      upstreams:   (d?.upstreams ?? []).map((u: { asn: number }) => u.asn),
-      peers:       (d?.peers ?? []).map((p: { asn: number }) => p.asn),
-      rir:         asnObj?.rir_allocation?.rir_name ?? '',
+      upstreams,
+      peers,
+      rir:         asnObj?.rir_name ?? asnObj?.rir_allocation?.rir_name ?? '',
     }
 
     await cachePut(kv, cacheKey, data, TTL.BGP)

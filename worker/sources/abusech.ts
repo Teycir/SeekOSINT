@@ -84,7 +84,7 @@ export async function fetchThreatFox(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Auth-Key': apiKey,
+        'Auth-Key': apiKey,          // key goes in HTTP header, not body
       },
       body: JSON.stringify({
         query: 'search_ioc',
@@ -103,8 +103,9 @@ export async function fetchThreatFox(
 }
 
 // ─── MalwareBazaar ────────────────────────────────────────────────────────────
-// Only useful when a SHA256 hash is available (e.g. extracted from another source).
-// On plain IP/domain lookups, return skipped.
+// Supports hash lookups (SHA256) and tag/signature queries.
+// For IP/domain queries we search by the query value as a tag/signature term.
+// Results are cached by query value.
 
 export async function fetchMalwareBazaar(
   query: LookupQuery,
@@ -113,18 +114,26 @@ export async function fetchMalwareBazaar(
   hash?: string,
 ): Promise<SourceResult<MalwareBazaarResult>> {
   const SOURCE = 'malwarebazaar'
+  const lookupValue = hash ?? query.normalised
+  const cacheKey = CacheKey.malwarebazaar(lookupValue)
 
-  if (!hash) return skipped(SOURCE)
+  const cached = await cacheGet<MalwareBazaarResult>(kv, cacheKey)
+  if (cached) return ok(SOURCE, cached, true)
 
   try {
+    const body = hash
+      ? { query: 'search_hash', hash }
+      : { query: 'search_tag', tag: query.normalised }
+
     const data = await abusePost<MalwareBazaarResult>(
       'https://mb-api.abuse.ch/api/v1/',
-      { query: 'search_hash', hash },
+      body,
       apiKey,
     )
+    await cachePut(kv, cacheKey, data, TTL.ABUSECH)
     return ok(SOURCE, data)
   } catch (err) {
-    console.error(`[${SOURCE}] fetch failed for hash ${hash}`, err)
+    console.error(`[${SOURCE}] fetch failed for ${lookupValue}`, err)
     return error(SOURCE, String(err))
   }
 }
@@ -194,8 +203,8 @@ export async function fetchSSLBL(
     }
   }
 
-  // SSLBL doesn't index by IP — filter by matching SHA1 entries is N/A here.
-  // Return full list and let the UI filter — or return empty if no IP match.
-  // For now return empty slice as a valid (not-found) result.
-  return ok(SOURCE, [])
+  // SSLBL indexes by SHA1 fingerprint, not IP. The JSON feed does include
+  // a "DstIP" field on each entry — filter by that to surface matches.
+  const matches = list.filter(e => (e as unknown as { DstIP?: string }).DstIP === query.normalised)
+  return ok(SOURCE, matches)
 }

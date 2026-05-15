@@ -4,6 +4,10 @@
  * When a source returns HTTP 429 or 403, call markExhausted() on the key
  * that triggered it. nextHealthy() will skip it until the TTL expires,
  * transparently rotating to the next available key.
+ *
+ * Round-robin is implemented by storing a per-ring cursor in KV so that
+ * successive requests spread load across all keys rather than always
+ * hammering key #1 until it exhausts.
  */
 export class KeyRing {
   private keys: string[]
@@ -17,13 +21,27 @@ export class KeyRing {
   }
 
   /**
-   * Returns the first key not currently marked exhausted, or null if all
-   * keys are burnt. Callers must treat null as a skip/error condition.
+   * Returns the next healthy key using round-robin rotation, or null if all
+   * keys are currently exhausted. Callers must treat null as a skip/error.
    */
   async nextHealthy(): Promise<string | null> {
-    for (const key of this.keys) {
+    // Read current cursor (default 0)
+    const cursorKey = `keyring:${this.source}:cursor`
+    const raw = await this.kv.get(cursorKey)
+    const startIndex = raw ? (parseInt(raw, 10) % this.keys.length) : 0
+
+    for (let i = 0; i < this.keys.length; i++) {
+      const index = (startIndex + i) % this.keys.length
+      const key = this.keys[index]
+      if (!key) continue
       const burnt = await this.kv.get(this.exhaustedKey(key))
-      if (!burnt) return key
+      if (!burnt) {
+        // Advance cursor for next call (best-effort, not atomic — acceptable)
+        await this.kv.put(cursorKey, String((index + 1) % this.keys.length), {
+          expirationTtl: 86400, // reset cursor after 24h idle
+        })
+        return key
+      }
     }
     return null
   }

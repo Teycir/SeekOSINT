@@ -97,7 +97,13 @@ export function mergeResults(input: MergeInput): HostResult {
   }
 
   const vulns = input.vulns.map(
-    (s, i) => unwrapSettled(s, `cve-${i}`),
+    (s, i) => {
+      // Use the real CVE ID from the settled value if available, else fall back to index
+      const sourceId = s.status === 'fulfilled' && s.value.data?.id
+        ? s.value.data.id
+        : `cve-${i}`
+      return unwrapSettled(s, sourceId)
+    },
   ) as SourceResult<CVEDetail>[]
 
   const recon = {

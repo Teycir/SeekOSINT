@@ -42,8 +42,14 @@ export async function fetchWayback(
       return error(SOURCE, `HTTP ${res.status}`)
     }
 
-    // CDX returns a JSON array of arrays; first row is the field header
+    // CDX returns a JSON array of arrays; first row is the field header.
+    // When there are no results the API returns an empty array [] — guard
+    // against that before slicing so we don't treat row[0] as a data row.
     const rows = await res.json<string[][]>()
+    if (!Array.isArray(rows) || rows.length <= 1) {
+      await cachePut(kv, cacheKey, [], TTL.WAYBACK)
+      return ok(SOURCE, [])
+    }
 
     // Skip header row (index 0)
     const data: WaybackResult[] = rows.slice(1).map(row => ({
