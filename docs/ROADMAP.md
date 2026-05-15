@@ -161,7 +161,7 @@
 ## 🎯 High-ROI Quick Wins
 **Easy tasks with outsized impact — do these next**
 
-- [ ] **Rate limit enforcement in the API route** — `lib/ratelimit.ts` exists but `app/api/lookup/route.ts` never calls it. One import + one await away from working.
+- [x] **Rate limit enforcement in the API route** — `lib/ratelimit.ts` exists but `app/api/lookup/route.ts` never calls it. One import + one await away from working.
 - [ ] **`lib/config.ts` — centralise all magic numbers** — timeouts, TTLs, window sizes are scattered. 30-min task, eliminates entire category of bugs.
 - [ ] **`wrangler secret put` for remaining secrets** — keys are still in `.env`. One command per key, no code changes needed.
 - [ ] **BFG / filter-branch to scrub `.env` from git history** — secrets are committed. Use `bfg --delete-files .env` before the keys are rotated.
