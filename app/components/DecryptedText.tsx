@@ -1,65 +1,77 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-
-const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+-=[]{}|;:,.<>?';
+import { useTextScramble } from '@/lib/hooks';
 
 interface DecryptedTextProps {
-  text: string;
-  speed?: number;
-  maxIterations?: number;
-  className?: string;
-  animateOn?: 'view' | 'hover';
+    text: string;
+    speed?: number;
+    maxIterations?: number;
+    sequential?: boolean;
+    revealDirection?: 'start' | 'end' | 'center';
+    useOriginalCharsOnly?: boolean;
+    characters?: string;
+    className?: string;
+    parentClassName?: string;
+    encryptedClassName?: string;
+    animateOn?: 'view' | 'hover';
 }
 
 export default function DecryptedText({
-  text,
-  speed = 50,
-  maxIterations = 20,
-  className = '',
-  animateOn = 'hover',
+    text,
+    speed = 50,
+    maxIterations = 10,
+    sequential = false,
+    revealDirection = 'start',
+    useOriginalCharsOnly = false,
+    characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+-=[]{}|;:,.<>?',
+    className = '',
+    parentClassName = '',
+    encryptedClassName = '',
+    animateOn = 'hover',
 }: DecryptedTextProps) {
-  const [display, setDisplay] = useState(animateOn === 'view' ? '' : text);
-  const ref = useRef<HTMLSpanElement>(null);
-  const frameRef = useRef(0);
+    const [isHovering, setIsHovering] = useState(false);
+    const { displayText, scramble } = useTextScramble(text, {
+        speed,
+        maxIterations,
+        useOriginalCharsOnly,
+        characters,
+        animateOn,
+    });
 
-  function scramble() {
-    let iter = 0;
-    clearInterval(frameRef.current);
-    frameRef.current = window.setInterval(() => {
-      setDisplay(
-        text.split('').map((char, i) => {
-          if (i < iter) return char;
-          return CHARS[Math.floor(Math.random() * CHARS.length)];
-        }).join('')
-      );
-      if (iter >= text.length) {
-        clearInterval(frameRef.current);
-        setDisplay(text);
-      }
-      iter += 1;
-    }, speed);
-  }
+    const handleMouseEnter = () => {
+        if (animateOn === 'hover') {
+            setIsHovering(true);
+            scramble();
+        }
+    };
 
-  useEffect(() => {
-    if (animateOn !== 'view') return;
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry?.isIntersecting) { observer.disconnect(); scramble(); } },
-      { threshold: 0.1 }
+    const handleMouseLeave = () => {
+        if (animateOn === 'hover') {
+            setIsHovering(false);
+        }
+    };
+
+    return (
+        <motion.span
+            className={`inline-block whitespace-nowrap ${parentClassName}`}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+        >
+            <span className={className}>
+                {displayText.split('').map((char, index) => {
+                    const isOriginal = char === text[index];
+                    return (
+                        <span
+                            key={index}
+                            className={isOriginal ? undefined : encryptedClassName}
+                        >
+                            {char}
+                        </span>
+                    );
+                })}
+            </span>
+        </motion.span>
     );
-    if (ref.current) observer.observe(ref.current);
-    return () => { observer.disconnect(); clearInterval(frameRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <motion.span
-      ref={ref}
-      className={`inline-block ${className}`}
-      onMouseEnter={() => animateOn === 'hover' && scramble()}
-    >
-      {display || text}
-    </motion.span>
-  );
 }

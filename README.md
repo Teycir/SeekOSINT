@@ -18,9 +18,11 @@ _Scan the QR code or copy the wallet address above._
 <!-- donation:eth:end -->
 
 
-# Seek
+# SeekOSINT
 
 > **Free-tier OSINT intelligence on any IP, domain, or ASN** — 17 data sources, 4 execution layers, sub-second cached responses. Built on Next.js + Cloudflare Pages/Workers/KV/D1.
+
+**Live at:** https://seekosint.pages.dev
 
 ```
 $ seek 1.1.1.1
@@ -40,7 +42,7 @@ $ seek 1.1.1.1
 
 ## Table of Contents
 
-- [Seek](#seek)
+- [SeekOSINT](#seekosint)
   - [Table of Contents](#table-of-contents)
   - [What Seek does](#what-seek-does)
   - [Architecture overview](#architecture-overview)
@@ -80,9 +82,9 @@ $ seek 1.1.1.1
 
 ---
 
-## What Seek does
+## What SeekOSINT does
 
-Seek is a **host intelligence tool** — paste in an IP address, a domain name, or an ASN and get back a unified report covering:
+SeekOSINT is a **host intelligence tool** — paste in an IP address, a domain name, or an ASN and get back a unified report covering:
 
 | Category | What you get |
 |---|---|

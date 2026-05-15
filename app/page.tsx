@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseQuery } from '../lib/validate'
+import DecryptedText from './components/DecryptedText'
 import { AnimatedTagline } from './components/AnimatedTagline'
 
 export default function HomePage() {
@@ -29,7 +30,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-4">
+    <main className="flex min-h-[85vh] flex-col items-center justify-center px-4">
       {/* Background glow */}
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
         <div className="h-[600px] w-[600px] rounded-full bg-neon-red/5 blur-[120px]" />
@@ -39,7 +40,14 @@ export default function HomePage() {
         {/* Header */}
         <div className="space-y-2 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-neon-red glow-text pulse-glow font-mono">
-            Seek
+            <DecryptedText 
+              text="seekosint" 
+              speed={30}
+              maxIterations={8}
+              animateOn="view"
+              className="text-neon-red"
+              encryptedClassName="text-neon-red/50"
+            />
           </h1>
           <AnimatedTagline text="Host intelligence across 12 sources — IP, domain, or ASN" />
         </div>
@@ -87,7 +95,7 @@ export default function HomePage() {
 
         {/* Sources hint */}
         <p className="text-center text-xs text-neon-red/30 font-mono">
-          Queries Shodan · VirusTotal · AbuseIPDB · ipinfo · Cloudflare · and 7 more
+          InternetDB · IPinfo · BGPView · RDAP · crt.sh · PassiveDNS · and 11 more
         </p>
       </div>
     </main>

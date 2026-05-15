@@ -7,7 +7,7 @@ import { ScrollProgress } from './components/ScrollProgress'
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Seek — Host Intelligence',
+  title: 'seekosint — Host Intelligence',
   description: 'OSINT tool — IP, domain, and ASN intelligence across 12 sources',
 }
 
