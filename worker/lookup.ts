@@ -443,7 +443,7 @@ export async function runLookup(
     query,
     // Pass the DoH-resolved IP explicitly so merge always shows it even
     // when geo/ipapi was skipped (CDN path). Also signals DNS failure.
-    resolvedIP:         ipQuery?.normalised ?? undefined,
+    resolvedIP:         ipQuery?.normalised ?? null,
     dnsResolutionFailed: query.type === 'domain' && ipQuery === null,
     core: {
       internetdb: internetdbResult,

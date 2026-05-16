@@ -68,8 +68,11 @@ export async function fetchIPAPI(
     const raw = await safeJson<RawIPAPI>(res, isRawIPAPI, SOURCE)
 
     if (raw.status === 'fail') {
-      console.error(`[${SOURCE}] API fail: ${raw.message} for ${query.normalised}`)
-      return error(SOURCE, raw.message ?? 'ip-api returned fail status')
+      // ip-api returns "fail" for private, reserved, or CDN anycast IPs.
+      // This is not an upstream error — treat it as a valid empty result so
+      // the circuit breaker is not tripped for Cloudflare-proxied domains.
+      console.warn(`[${SOURCE}] API fail (reserved/CDN IP): ${raw.message} for ${query.normalised}`)
+      return skipped(SOURCE)
     }
 
     const data: IPAPIResult = {

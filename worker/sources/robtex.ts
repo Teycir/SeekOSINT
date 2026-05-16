@@ -31,6 +31,11 @@ export async function fetchRobtex(
     )
 
     if (!res.ok) {
+      // 400 / 404 for reserved or CDN anycast IPs — not a real upstream failure
+      if (res.status === 400 || res.status === 404) {
+        console.warn(`[${SOURCE}] HTTP ${res.status} for ${query.normalised} (likely CDN/reserved IP)`)
+        return skipped(SOURCE)
+      }
       console.error(`[${SOURCE}] HTTP ${res.status} for ${query.normalised}`)
       return error(SOURCE, `HTTP ${res.status}`)
     }
