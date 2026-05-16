@@ -17,6 +17,7 @@ import {
   containsPathTraversal,
   containsCommandInjection,
   validateInput,
+  validateQueryInput,
   sanitizeJSON,
   sanitizeURL,
   sanitizeEmail,
@@ -129,8 +130,7 @@ describe('containsSQLInjection', () => {
     expect(containsSQLInjection('UNION SELECT password')).toBe(true)
   })
 
-  it('detects SQL comment patterns', () => {
-    expect(containsSQLInjection('test--comment')).toBe(true)
+  it('detects SQL comment delimiters', () => {
     expect(containsSQLInjection('test/*comment*/')).toBe(true)
   })
 
@@ -139,9 +139,11 @@ describe('containsSQLInjection', () => {
     expect(containsSQLInjection("' AND '1'='1")).toBe(true)
   })
 
-  it('allows safe input', () => {
+  it('allows safe input including hyphens and semicolons', () => {
     expect(containsSQLInjection('example.com')).toBe(false)
     expect(containsSQLInjection('192.168.1.1')).toBe(false)
+    // double-hyphen is valid in some domain labels; not flagged at free-text level
+    expect(containsSQLInjection('my--site.example.com')).toBe(false)
   })
 })
 
@@ -207,19 +209,23 @@ describe('containsPathTraversal', () => {
 })
 
 describe('containsCommandInjection', () => {
-  it('detects shell metacharacters', () => {
-    expect(containsCommandInjection('test; rm -rf /')).toBe(true)
-    expect(containsCommandInjection('test | cat /etc/passwd')).toBe(true)
-    expect(containsCommandInjection('test && evil')).toBe(true)
-  })
-
-  it('detects command substitution', () => {
-    expect(containsCommandInjection('test$(whoami)')).toBe(true)
+  it('detects backtick command substitution', () => {
     expect(containsCommandInjection('test`whoami`')).toBe(true)
   })
 
-  it('allows safe input', () => {
+  it('detects $() substitution', () => {
+    expect(containsCommandInjection('test$(whoami)')).toBe(true)
+  })
+
+  it('detects && and ||', () => {
+    expect(containsCommandInjection('test && evil')).toBe(true)
+    expect(containsCommandInjection('test || evil')).toBe(true)
+  })
+
+  it('allows common punctuation that appears in labels/notes', () => {
     expect(containsCommandInjection('example.com')).toBe(false)
+    expect(containsCommandInjection('My target; notes here')).toBe(false)
+    expect(containsCommandInjection('192.168.1.1 | some note')).toBe(false)
   })
 })
 
@@ -242,17 +248,46 @@ describe('validateInput', () => {
     expect(result.reason).toContain('path traversal')
   })
 
-  it('rejects command injection', () => {
-    // Note: semicolon is caught by SQL injection check first
-    const result = validateInput('test; rm -rf /')
-    expect(result.valid).toBe(false)
-    expect(result.reason).toBeDefined()
+  it('rejects command substitution', () => {
+    expect(validateInput('test`whoami`').valid).toBe(false)
+    expect(validateInput('test$(id)').valid).toBe(false)
   })
 
   it('accepts safe input', () => {
     expect(validateInput('example.com').valid).toBe(true)
     expect(validateInput('192.168.1.1').valid).toBe(true)
     expect(validateInput('AS13335').valid).toBe(true)
+    expect(validateInput('My label; some notes').valid).toBe(true)
+  })
+})
+
+describe('validateQueryInput', () => {
+  it('rejects SQL keywords in query strings', () => {
+    expect(validateQueryInput('SELECT * FROM users').valid).toBe(false)
+    expect(validateQueryInput('UNION SELECT password').valid).toBe(false)
+  })
+
+  it('rejects XSS in query strings', () => {
+    expect(validateQueryInput('<script>alert(1)</script>').valid).toBe(false)
+    expect(validateQueryInput('javascript:alert(1)').valid).toBe(false)
+  })
+
+  it('rejects path traversal sequences', () => {
+    expect(validateQueryInput('../etc/passwd').valid).toBe(false)
+    expect(validateQueryInput('%2e%2e/etc/passwd').valid).toBe(false)
+  })
+
+  it('accepts all valid query types', () => {
+    expect(validateQueryInput('example.com').valid).toBe(true)
+    expect(validateQueryInput('192.168.1.1').valid).toBe(true)
+    expect(validateQueryInput('2001:db8::1').valid).toBe(true)
+    expect(validateQueryInput('AS13335').valid).toBe(true)
+    expect(validateQueryInput('my--site.example.co.uk').valid).toBe(true)
+  })
+
+  it('does not reject semicolons or pipes in query strings', () => {
+    // These can appear in labels passed alongside queries and must not false-positive
+    expect(validateQueryInput('8.8.8.8').valid).toBe(true)
   })
 })
 

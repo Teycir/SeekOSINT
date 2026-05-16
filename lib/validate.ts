@@ -1,5 +1,5 @@
 import type { LookupQuery, QueryType } from './types'
-import { sanitizeString, validateInput } from './sanitize'
+import { sanitizeString, validateQueryInput } from './sanitize'
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/
 const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
@@ -19,7 +19,7 @@ export function parseQuery(raw: string): LookupQuery | null {
   const sanitized = sanitizeString(raw, 500)
   
   // Check for injection patterns
-  const validation = validateInput(sanitized)
+  const validation = validateQueryInput(sanitized)
   if (!validation.valid) {
     console.warn('[validate] rejected input:', validation.reason, sanitized.slice(0, 50))
     return null

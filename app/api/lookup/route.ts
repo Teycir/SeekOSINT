@@ -8,7 +8,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
-import { sanitizeQueryParam, validateInput } from '../../../lib/sanitize'
+import { sanitizeQueryParam, validateQueryInput } from '../../../lib/sanitize'
 import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
@@ -29,8 +29,8 @@ export async function GET(req: Request): Promise<Response> {
   // Sanitize query parameter
   const q = sanitizeQueryParam(qRaw, 500)
   
-  // Validate for injection patterns
-  const validation = validateInput(q)
+  // Validate for injection patterns (query-safe subset — no false positives on domains)
+  const validation = validateQueryInput(q)
   if (!validation.valid) {
     console.warn('[api/lookup] rejected query:', validation.reason, q.slice(0, 50))
     return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)

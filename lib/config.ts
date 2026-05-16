@@ -30,10 +30,11 @@ export const CIRCUIT_BREAKER = {
   WINDOW_TTL_SECONDS: 5 * 60,
   /** How long the breaker stays open before auto-recovery (15 minutes). */
   OPEN_TTL_SECONDS: 15 * 60,
-  /** Failure ratio that trips the breaker (50 %). */
-  TRIP_RATIO: 0.5,
-  /** Minimum requests in a window before the breaker can trip. */
-  MIN_REQUESTS_TO_TRIP: 4,
+  /** Failure ratio that trips the breaker (75 %). */
+  TRIP_RATIO: 0.75,
+  /** Minimum requests in a window before the breaker can trip.
+   *  10 prevents a single flaky request from locking out a source. */
+  MIN_REQUESTS_TO_TRIP: 10,
   /** KV key prefix for circuit-breaker state. */
   KV_PREFIX: 'cb:',
 } as const

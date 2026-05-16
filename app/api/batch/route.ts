@@ -13,7 +13,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
-import { sanitizeStringArray, validateInput } from '../../../lib/sanitize'
+import { sanitizeStringArray, validateQueryInput } from '../../../lib/sanitize'
 import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { recordSearch } from '../../../lib/searches'
@@ -48,9 +48,9 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, 'no valid string queries provided', 400)
   }
   
-  // Validate each query for injection patterns
+  // Validate each query for injection patterns (query-safe subset)
   for (const q of rawQueries) {
-    const validation = validateInput(q)
+    const validation = validateQueryInput(q)
     if (!validation.valid) {
       console.warn('[api/batch] rejected query:', validation.reason, q.slice(0, 50))
       return errorResponse(ErrorCode.INVALID_QUERY, `invalid input in batch: ${validation.reason}`, 400)

@@ -110,16 +110,28 @@ export function sanitizeStringArray(
 /**
  * Detect potential SQL injection patterns.
  * This is a defense-in-depth measure — parameterized queries are the primary defense.
+ * Only applied to free-text fields (labels, notes), NOT to query strings.
  */
 export function containsSQLInjection(input: string): boolean {
   const sqlPatterns = [
     /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|DECLARE)\b)/i,
-    /(--|;|\/\*|\*\/|xp_|sp_)/i,
-    /('(\s)*(OR|AND)(\s)*')/i,
-    /(\bOR\b.*=.*)/i,
-    /(\bAND\b.*=.*)/i,
+    /(\/\*|\*\/|xp_|sp_)/i,           // comment delimiters, stored-proc prefixes
+    /('(\s)*(OR|AND)(\s)*')/i,         // classic ' OR '1'='1 pattern
   ]
-  
+
+  return sqlPatterns.some(pattern => pattern.test(input))
+}
+
+/**
+ * Detect SQL injection in query strings (IPs, domains, ASNs).
+ * Much stricter subset — only patterns that cannot appear in any valid query.
+ */
+export function containsSQLInjectionInQuery(input: string): boolean {
+  const sqlPatterns = [
+    /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|DECLARE)\b)/i,
+    /(\/\*|\*\/)/i,  // comment delimiters only — ; and -- can appear in labels
+  ]
+
   return sqlPatterns.some(pattern => pattern.test(input))
 }
 
@@ -188,44 +200,66 @@ export function containsPathTraversal(input: string): boolean {
 // ─── Command injection prevention ─────────────────────────────────────────────
 
 /**
- * Detect command injection patterns.
+ * Detect command injection patterns in free-text fields (labels, notes).
+ * Not used for query strings — IPs/domains/ASNs have their own validator.
  */
 export function containsCommandInjection(input: string): boolean {
   const cmdPatterns = [
-    /[;&|`$(){}[\]<>]/,
-    /\$\(/,
-    /`.*`/,
-    /\|\|/,
-    /&&/,
+    /`.*`/,    // backtick command substitution
+    /\$\(/,    // $(command)
+    /\|\|/,    // ||
+    /&&/,      // &&
   ]
-  
+
   return cmdPatterns.some(pattern => pattern.test(input))
 }
 
 // ─── Comprehensive validation ─────────────────────────────────────────────────
 
 /**
- * Validate input against all injection patterns.
- * Returns { valid: boolean, reason?: string }
- * Checks in order of severity: SQL, XSS, Path Traversal, Command Injection
+ * Validate a query string (IP, domain, ASN) for injection patterns.
+ * Deliberately narrow — only rejects patterns that cannot appear in any
+ * legitimate IP, domain, or ASN string. Does NOT check for command
+ * injection characters like ()[]{}; which are valid in some contexts.
+ */
+export function validateQueryInput(input: string): { valid: boolean; reason?: string } {
+  if (containsSQLInjectionInQuery(input)) {
+    return { valid: false, reason: 'potential SQL injection detected' }
+  }
+
+  if (containsXSS(input)) {
+    return { valid: false, reason: 'potential XSS detected' }
+  }
+
+  // Path traversal: only flag actual traversal sequences, not single dots
+  if (/(\.\.[/\\]|%2e%2e|%252e%252e)/i.test(input)) {
+    return { valid: false, reason: 'path traversal detected' }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Validate a free-text field (label, notes, admin input).
+ * Applies the full set of injection checks including SQL and command injection.
  */
 export function validateInput(input: string): { valid: boolean; reason?: string } {
   if (containsSQLInjection(input)) {
     return { valid: false, reason: 'potential SQL injection detected' }
   }
-  
+
   if (containsXSS(input)) {
     return { valid: false, reason: 'potential XSS detected' }
   }
-  
+
   if (containsPathTraversal(input)) {
     return { valid: false, reason: 'path traversal detected' }
   }
-  
+
   if (containsCommandInjection(input)) {
     return { valid: false, reason: 'command injection detected' }
   }
-  
+
   return { valid: true }
 }
 

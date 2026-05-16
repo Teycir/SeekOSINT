@@ -6,7 +6,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
-import { sanitizeLabel, sanitizeNotes, validateInput } from '../../../lib/sanitize'
+import { sanitizeLabel, sanitizeNotes, validateQueryInput, validateInput } from '../../../lib/sanitize'
 import { saveTarget, listTargets } from '../../../lib/targets'
 import { diffHostResults } from '../../../lib/diff'
 import type { TargetDiff } from '../../../lib/diff'
@@ -97,8 +97,8 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, 'query is required', 400)
   }
   
-  // Validate for injection patterns before parsing
-  const validation = validateInput(body.query)
+  // Validate query for injection patterns (query-safe subset, not free-text rules)
+  const validation = validateQueryInput(body.query)
   if (!validation.valid) {
     console.warn('[api/targets] rejected query:', validation.reason)
     return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
