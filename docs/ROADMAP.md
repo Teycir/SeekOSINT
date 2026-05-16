@@ -83,7 +83,7 @@ Ordered by impact-to-effort ratio. Based on external architecture review (May 20
 - [ ] Set secrets: `wrangler secret put TURNSTILE_SECRET_KEY` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Pages env vars
 
 ### 2. `/api/admin/health` endpoint
-- [ ] Aggregate breaker states, recent error rates, and KV hit/miss counts into a single health endpoint. The per-response `meta.circuitBreakers` gives per-request signal; this gives operational trending. ~30 min of work, big ops win.
+- [x] `GET /api/admin/health` — Bearer-authed, returns breaker states + summary, D1 row counts (total searches, saved targets, last-hour activity), blocklist freshness from KV meta keys
 
 ### 3. Threat indicator normalization (`lib/normalize.ts`)
 - [ ] When the same IP/domain appears across multiple feeds (URLhaus + ThreatFox + Feodo), deduplicate into a canonical `ThreatIndicator` shape with provenance, confidence, and first/last seen timestamps. Not a database redesign — a result transformation layer before the response is serialized. Directly differentiating from other OSINT tools.
