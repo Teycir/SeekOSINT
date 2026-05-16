@@ -50,7 +50,7 @@ function checkAuth(req: Request, adminToken: string | undefined): boolean {
 }
 
 export async function GET(req: Request): Promise<Response> {
-  const { env } = getCloudflareContext()
+  const { env } = await getCloudflareContext({ async: true })
   const typedEnv = env as unknown as Env
 
   if (!checkAuth(req, typedEnv.ADMIN_TOKEN)) {

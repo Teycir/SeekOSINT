@@ -41,7 +41,7 @@ interface TargetSummary {
 
 export async function GET(): Promise<Response> {
   try {
-    const { env } = getCloudflareContext()
+    const { env } = await getCloudflareContext({ async: true })
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
 
@@ -147,7 +147,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    const { env } = getCloudflareContext()
+    const { env } = await getCloudflareContext({ async: true })
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
 
@@ -175,7 +175,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function DELETE(): Promise<Response> {
   try {
-    const { env } = getCloudflareContext()
+    const { env } = await getCloudflareContext({ async: true })
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
 

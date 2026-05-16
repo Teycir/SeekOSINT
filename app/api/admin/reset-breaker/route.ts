@@ -57,7 +57,7 @@ function checkAuth(req: Request, adminToken: string | undefined): boolean {
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<Response> {
-  const { env }    = getCloudflareContext()
+  const { env }    = await getCloudflareContext({ async: true })
   const typedEnv   = env as unknown as Env
 
   // ── Auth ──────────────────────────────────────────────────────────────────

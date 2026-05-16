@@ -16,7 +16,7 @@ export async function DELETE(
   if (!id) return errorResponse(ErrorCode.INVALID_QUERY, 'id is required', 400)
 
   try {
-    const { env } = getCloudflareContext()
+    const { env } = await getCloudflareContext({ async: true })
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
 

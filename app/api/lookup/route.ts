@@ -23,7 +23,7 @@ export async function GET(req: Request): Promise<Response> {
   const qRaw    = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
 
-  const { env, ctx } = getCloudflareContext()
+  const { env, ctx } = await getCloudflareContext({ async: true })
   const typedEnv = env as unknown as Env
   const ip = extractCallerIp(req)
   const rayId = req.headers.get('CF-Ray') ?? undefined

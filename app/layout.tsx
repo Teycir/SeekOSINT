@@ -4,6 +4,7 @@ import './globals.css'
 import { Footer } from './components/Footer'
 import { ScrollProgress } from './components/ScrollProgress'
 import { TopNav } from './components/TopNav'
+import { TrustedTypesPolicy } from './components/TrustedTypesPolicy'
 
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'] })
 
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${jetbrainsMono.className} min-h-screen bg-dark-bg text-dark-text overflow-x-hidden antialiased selection:bg-neon-red/30 selection:text-neon-red`}
       >
         <ScrollProgress />
+        <TrustedTypesPolicy />
         <TopNav />
         {children}
         <Footer />

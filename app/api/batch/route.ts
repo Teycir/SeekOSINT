@@ -57,7 +57,7 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const { env, ctx } = getCloudflareContext()
+  const { env, ctx } = await getCloudflareContext({ async: true })
 
   // Rate limit: count each query against the caller's quota
   const ip =

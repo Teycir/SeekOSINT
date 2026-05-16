@@ -66,7 +66,10 @@ async function fetchResult(rawQuery: string, forceRefresh = false): Promise<Fetc
   try {
     const query = parseQuery(rawQuery)
     if (!query) return { ok: false, error: { kind: 'invalid' } }
-    const { env, ctx } = getCloudflareContext()
+    // Use async mode — sync mode throws when the context isn't yet set on the
+    // global scope, which happens when Next.js renders this as a dynamic route
+    // before the Worker request context has been injected.
+    const { env, ctx } = await getCloudflareContext({ async: true })
     const result = await runLookup({ ...query, forceRefresh }, env as unknown as Env, ctx)
     return { ok: true, result }
   } catch (err: unknown) {
