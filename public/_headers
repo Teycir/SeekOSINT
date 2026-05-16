@@ -1,5 +1,2 @@
 /*
-  CSP is set via next.config.ts headers() — not here.
-  Cloudflare Pages overwrites _headers CSP with a nonce-based policy.
-  next.config.ts headers() bakes the CSP into the build and wins.
-*/
+  X-Robots-Tag: noai
