@@ -1,6 +1,6 @@
 # SeekOSINT — Roadmap
 
-> Last updated: May 2026
+> Last updated: 16 May 2026
 
 ---
 
@@ -29,8 +29,7 @@
 
 ## 🔴 Must do before sharing publicly
 
-- [ ] Run BFG to scrub `.env` from git history, then rotate all keys
-- [ ] `wrangler secret put` for ADMIN_TOKEN, WEBHOOK_URL
+
 - [x] Validate external API responses before parsing — `safeJson<T>(res, guard, label)` in `lib/results.ts`; all 10 source files updated; malformed upstream → `status: 'error'`, never a crash or bad cache write
 
 ---
@@ -93,6 +92,10 @@ Ordered by impact-to-effort ratio. Based on external architecture review (May 20
 
 ### 5. Webhook diff on target re-query
 - [ ] The cron + snapshot infrastructure is already there. The missing piece is a structured diff (ports added/removed, new CVEs, new threat hits) emitted as a typed payload to `WEBHOOK_URL`. Turns saved targets into a real passive monitoring feed.
+
+### 6. Saved target monitoring + risk score
+- [ ] **Change detection** — cron re-queries every saved target, diffs the new `HostResult` against the stored `result_json` snapshot, and persists the delta. Surfaces diffs in a `/targets` dashboard card: new open ports, first threat intel hit, new CVEs, certificate rotation, domain disappearing from live web. The D1 `result_json` column and cron scaffold are already in place — the missing piece is the diff logic and UI.
+- [x] **Risk score** — a single 0–100 number computed from what's already in `HostResult`: open port count + exposure (e.g. port 445/3389 weighted heavily), max CVSS score across all CVEs, threat intel hits (each feed weighted independently), blocklist presence (Feodo/SSLBL = instant ceiling), certificate anomalies (self-signed, near-expiry). Displayed as a colour-coded badge at the top of every result card. No new API calls, no new data — pure aggregation of the existing merge layer output. Turns an 8-card manual read into a one-glance triage signal. (`lib/risk.ts`, `app/components/RiskBadge.tsx`)
 
 ---
 

@@ -31,6 +31,7 @@ import type {
 } from './types'
 import { unwrapSettled } from './results'
 import { normalizeThreatIndicators } from './normalize'
+import { computeRiskScore } from './risk'
 
 interface MergeInput {
   query: LookupQuery
@@ -142,7 +143,7 @@ export function mergeResults(input: MergeInput): HostResult {
 
   const { cacheHits, sourcesQueried, sourcesFailed } = countMeta(allResults)
 
-  return {
+  const partial = {
     query,
     ...(resolvedIP !== undefined && { resolvedIP }),
     ...(resolvedDomain !== undefined && { resolvedDomain }),
@@ -165,5 +166,10 @@ export function mergeResults(input: MergeInput): HostResult {
       sourcesFailed,
       circuitBreakers: input.circuitBreakers,
     },
+  }
+
+  return {
+    ...partial,
+    riskScore: computeRiskScore(partial as import('./types').HostResult),
   }
 }

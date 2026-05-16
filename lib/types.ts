@@ -239,6 +239,11 @@ export interface CircuitBreakerMeta {
 
 export type { ThreatIndicator, ThreatFeed } from './normalize'
 
+// ─── Risk score ───────────────────────────────────────────────────────────────
+// Re-exported from lib/risk.ts so consumers import from a single place.
+
+export type { RiskScore, RiskBreakdown, RiskSeverity } from './risk'
+
 // ─── Merged output ─────────────────────────────────────────────────────────────
 
 export interface HostResult {
@@ -273,6 +278,12 @@ export interface HostResult {
    * per-source threat data is still present in `threat` for debugging.
    */
   normalizedThreats: import('./normalize').ThreatIndicator[]
+
+  /**
+   * Aggregated risk score (0–100) with per-category breakdown.
+   * Computed by computeRiskScore() in merge.ts from the full HostResult.
+   */
+  riskScore: import('./risk').RiskScore
 
   // Layer 3 — only populated if internetdb.vulns is non-empty
   vulns: SourceResult<CVEDetail>[]

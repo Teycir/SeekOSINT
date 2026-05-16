@@ -15,6 +15,7 @@ import { CopyButton } from '../../components/CopyButton'
 import { ShareButton } from '../../components/ShareButton'
 import { SaveButton } from '../../components/SaveButton'
 import { VulnsStream } from '../../components/VulnsStream'
+import { RiskBadge } from '../../components/RiskBadge'
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -445,7 +446,10 @@ export default async function HostPage({
               </h1>
               <CopyButton value={result.query.normalised} label="Copy query" className="text-sm" />
             </div>
-            <p className="text-xs text-neutral-500 uppercase tracking-wide">{result.query.type}</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">{result.query.type}</p>
+              <RiskBadge risk={result.riskScore} />
+            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
             <SaveButton query={result.query.normalised} />
