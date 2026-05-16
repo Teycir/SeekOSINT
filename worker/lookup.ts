@@ -19,6 +19,7 @@
 import type {
   BGPViewResult,
   BucketResult,
+  CertRecord,
   CVEDetail,
   Env,
   HostResult,
@@ -66,9 +67,11 @@ import { fetchWayback }       from './sources/wayback'
 // ─── DNS resolution (domain → IP) ─────────────────────────────────────────────
 
 /**
- * Resolve a domain to its first A record using Cloudflare DoH.
- * Returns null if resolution fails or the domain has no A record.
- * Result is cached in KV for 5 minutes (short TTL — DNS can change).
+ * Resolve a domain to an IP using Cloudflare DoH.
+ * Tries A records first; falls back to AAAA if no A record is returned.
+ * Returns null only when both record types fail or SSRF guard blocks the result.
+ * Retries once on network/timeout error (not on NXDOMAIN or SSRF block).
+ * Result is cached in KV for 5 minutes.
  */
 async function resolveDomainToIP(
   domain: string,
@@ -79,36 +82,55 @@ async function resolveDomainToIP(
 
   if (!forceRefresh) {
     const cached = await kv.get(cacheKey)
-    if (cached) return cached  // only successful IPs are ever cached (see below)
+    if (cached) return cached
   }
 
-  try {
-    const res = await safeFetch(
-      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=A`,
-      {
-        headers: { Accept: 'application/dns-json' },
-        signal: AbortSignal.timeout(5000),
-      },
-    )
-    if (!res.ok) return null
-    const json = await res.json() as { Answer?: { type: number; data: string }[] }
-    const ip = json.Answer?.find(r => r.type === 1)?.data ?? null
-    
-    // DNS rebinding guard — validate the resolved IP before caching or using it
-    if (ip) {
+  async function doQuery(type: 'A' | 'AAAA'): Promise<string | null> {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        validateSSRFResolved(ip)
+        const res = await safeFetch(
+          `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${type}`,
+          {
+            headers: { Accept: 'application/dns-json' },
+            signal: AbortSignal.timeout(6000),
+          },
+        )
+        if (!res.ok) {
+          console.warn(`[lookup] DoH ${type} HTTP ${res.status} for ${domain} (attempt ${attempt + 1})`)
+          continue
+        }
+        const json = await res.json() as { Answer?: { type: number; data: string }[] }
+        // type 1 = A, type 28 = AAAA
+        // Many CDN domains resolve via CNAME chains — the Answer section contains
+        // both CNAME records (type 5) and the final A/AAAA record. We must scan
+        // all records for the right type, not just the first entry.
+        const rrType = type === 'A' ? 1 : 28
+        const ip = json.Answer?.find(r => r.type === rrType)?.data ?? null
+        if (ip) {
+          try {
+            validateSSRFResolved(ip)
+          } catch (err) {
+            console.error('[lookup] DNS resolution blocked by SSRF guard:', domain, ip, err)
+            return null  // private IP in answer — do not retry
+          }
+        }
+        return ip  // null = NXDOMAIN/no record — valid outcome, stop retrying
       } catch (err) {
-        console.error('[lookup] DNS resolution blocked by SSRF guard:', domain, ip, err)
-        return null
+        console.warn(`[lookup] DoH ${type} attempt ${attempt + 1} failed for ${domain}:`, err)
       }
-      await kv.put(cacheKey, ip, { expirationTtl: 300 })
     }
-    return ip
-  } catch (err) {
-    console.error('[lookup] DNS resolution failed for', domain, err)
     return null
   }
+
+  const ip = (await doQuery('A')) ?? (await doQuery('AAAA'))
+
+  if (ip) {
+    await kv.put(cacheKey, ip, { expirationTtl: 300 })
+  } else {
+    console.error(`[lookup] DNS resolution failed for ${domain} (A and AAAA both returned nothing)`)
+  }
+
+  return ip
 }
 
 // ─── All source names (must match the strings used inside each fetcher) ────────
@@ -375,39 +397,61 @@ export async function runLookup(
       ? Promise.resolve(internetdbPreflight)
       : withBreaker('internetdb', env.KV, () => fetchInternetDB(effectiveIPQuery, env.KV)),
 
-    // ip-api, bgpview, robtex — skip for CDN IPs (they fail or return noise)
+    // ip-api: skip for CDN IPs — geo of a shared anycast edge node is meaningless.
     isCDNIP
-      ? Promise.resolve({ source: 'ipapi',   status: 'skipped' as const, data: null })
+      ? Promise.resolve({ source: 'ipapi', status: 'skipped' as const, data: null })
       : withBreaker('ipapi', env.KV, () => fetchIPAPI(effectiveIPQuery, env.KV)),
-    // BGPView: for ASN queries, reuse the pre-flight result to avoid a
-    // duplicate fetch and double circuit-breaker accounting.
+    // BGPView: always run even for CDN IPs — knowing the CDN's ASN/prefix is
+    // genuinely useful (confirms Cloudflare/Fastly/Akamai proxying).
+    // For ASN queries, reuse the pre-flight result to avoid a duplicate fetch.
     bgpPreflightResult !== null
       ? Promise.resolve(bgpPreflightResult)
-      : isCDNIP
-        ? Promise.resolve({ source: 'bgpview', status: 'skipped' as const, data: null })
-        : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
+      : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV), `bgp:ip:${effectiveIPQuery.normalised}`),
 
     // Domain + IP sources: always run regardless of CDN status
     withBreaker('rdap',  env.KV, () => fetchRDAP(query, env.KV),  `rdap:domain:${query.normalised}`),
     withBreaker('whois', env.KV, () => fetchWhois(query, env.KV), `whois:${query.normalised}`),
-    // crtsh: internally supplements with certspotter when crt.sh returns empty.
-    // withBreaker also falls back to stale cache when the breaker is open.
-    // If both crtsh breaker is open AND cache is cold, certspotter runs standalone.
-    withBreaker('crtsh', env.KV, async () => {
+    // crtsh: certspotter acts as a permanent fallback at every level:
+    //   1. crt.sh returns empty → certspotter supplements inside fetchCRTSH
+    //   2. crt.sh errors        → certspotter runs standalone (below)
+    //   3. breaker open + stale cache hit → stale cache is served
+    //   4. breaker open + cache COLD → certspotter runs standalone (cold-start gap fix)
+    //
+    // We deliberately do NOT use withBreaker here so we can intercept the
+    // open+cold case and route to certspotter instead of returning skipped().
+    (async (): Promise<SourceResult<CertRecord[]>> => {
+      const breakerState = await getBreakerState('crtsh', env.KV)
+      if (breakerState === 'open') {
+        // Try stale cache first
+        try {
+          const raw = await env.KV.get(`crtsh:${query.normalised}`)
+          if (raw) {
+            return { source: 'crtsh', status: 'cached', data: JSON.parse(raw) as CertRecord[] }
+          }
+        } catch { /* fall through to certspotter */ }
+        // Cache cold — run certspotter standalone; surface under 'crtsh' so
+        // the UI card renders as normal (the user sees certs, not an error).
+        console.warn('[lookup] crtsh breaker open + cache cold — running certspotter standalone')
+        const spotterResult = await fetchCertSpotter(query, env.KV)
+        return { ...spotterResult, source: 'crtsh' }
+      }
+
+      // Breaker closed / half-open — normal path
       const crtResult = await fetchCRTSH(query, env.KV)
-      // If crtsh returned an error (not empty-ok), escalate to certspotter directly
       if (crtResult.status === 'error') {
-        console.warn(`[lookup] crtsh errored — trying certspotter standalone`)
+        await recordBreakerFailure('crtsh', env.KV)
+        console.warn('[lookup] crtsh errored — trying certspotter standalone')
         return fetchCertSpotter(query, env.KV)
       }
+      await recordBreakerSuccess('crtsh', env.KV)
       return crtResult
-    }, `crtsh:${query.normalised}`),
+    })(),
     withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV, ipQuery), `passivedns:${query.normalised}`),
 
-    // Robtex — skip for CDN IPs
+    // Robtex — skip for CDN IPs; also pass stale-cache key so open breaker still serves data
     isCDNIP
       ? Promise.resolve(skipped<ReturnType<typeof fetchRobtex> extends Promise<SourceResult<infer T>> ? T : never>('robtex'))
-      : withBreaker('robtex', env.KV, () => fetchRobtex(effectiveIPQuery, env.KV)),
+      : withBreaker('robtex', env.KV, () => fetchRobtex(effectiveIPQuery, env.KV), `robtex:${effectiveIPQuery.normalised}`),
 
     // Threat intel — IP path: skip for CDN IPs (shared anycast = noise)
     isCDNIP

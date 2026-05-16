@@ -53,14 +53,27 @@ export const CONCURRENCY = {
 export const CIRCUIT_BREAKER = {
   /** Rolling window for failure-ratio calculation (5 minutes). */
   WINDOW_TTL_SECONDS: 5 * 60,
-  /** How long the breaker stays open before auto-recovery (15 minutes). */
-  OPEN_TTL_SECONDS: 15 * 60,
-  /** Failure ratio that trips the breaker (75 %). */
-  TRIP_RATIO: 0.75,
-  /** Minimum requests in a window before the breaker can trip.
-   *  20 prevents a small burst of transient errors from locking out a source.
-   *  Previous value of 10 was too hair-trigger. */
-  MIN_REQUESTS_TO_TRIP: 20,
+  /**
+   * How long the breaker stays open before auto-recovery (5 minutes).
+   * Short recovery is fine because certspotter covers the cold-start gap
+   * and the window counters expire on their own TTL anyway.
+   */
+  OPEN_TTL_SECONDS: 5 * 60,
+  /**
+   * Failure ratio that trips the breaker (95 %).
+   * crt.sh and other rate-limited sources regularly return 429s on individual
+   * requests without being "down". We only want to trip on near-total outages,
+   * not on a noisy burst.  95 % means 19 of 20 requests must fail within
+   * the 5-minute window before the breaker opens.
+   */
+  TRIP_RATIO: 0.95,
+  /**
+   * Minimum requests in a window before the breaker can trip.
+   * 50 means we need at least 50 requests in 5 minutes before even evaluating
+   * the ratio — this is a high-traffic guard that completely eliminates
+   * false trips from cold-start bursts or small test runs.
+   */
+  MIN_REQUESTS_TO_TRIP: 50,
   /** KV key prefix for circuit-breaker state. */
   KV_PREFIX: 'cb:',
 } as const
