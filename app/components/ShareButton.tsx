@@ -7,6 +7,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Tooltip } from './Tooltip'
 
 export function ShareButton({ query }: { query: string }) {
   const [copied, setCopied] = useState(false)
@@ -19,7 +20,6 @@ export function ShareButton({ query }: { query: string }) {
         await navigator.share({ title: `seekosint — ${query}`, url })
         return
       } catch (err) {
-        // user cancelled share sheet — fall through to clipboard
         console.debug('[ShareButton] share cancelled or failed:', err)
       }
     }
@@ -29,22 +29,22 @@ export function ShareButton({ query }: { query: string }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
-      // silently ignore
       console.warn('[ShareButton] clipboard write failed:', err)
     }
   }
 
   return (
-    <button
-      onClick={share}
-      title="Copy link to this result"
-      className={`text-xs font-mono transition-colors duration-150
-                  ${copied
-                    ? 'text-green-400'
-                    : 'text-neutral-500 hover:text-white'
-                  }`}
-    >
-      {copied ? '✓ copied' : '⎘ share'}
-    </button>
+    <Tooltip label={copied ? 'Link copied!' : 'Copy link to this result'}>
+      <button
+        onClick={share}
+        className={`text-xs font-mono transition-colors duration-150
+                    ${copied
+                      ? 'text-green-400'
+                      : 'text-neutral-500 hover:text-white'
+                    }`}
+      >
+        {copied ? '✓ copied' : '⎘ share'}
+      </button>
+    </Tooltip>
   )
 }

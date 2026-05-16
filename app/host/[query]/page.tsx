@@ -28,9 +28,27 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { query } = await params
   const decoded = decodeURIComponent(query)
+  const url = `https://seekosint.pages.dev/host/${query}`
+  const description =
+    `OSINT intelligence report for ${decoded} — geolocation, open ports, CVEs, ` +
+    `threat feeds, certificate transparency, passive DNS, and BGP routing.`
   return {
-    title: `${decoded} — seekosint`,
-    description: `Host intelligence report for ${decoded}`,
+    title: decoded,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${decoded} — SeekOSINT`,
+      description,
+      url,
+      type: 'article',
+    },
+    twitter: {
+      card: 'summary',
+      title: `${decoded} — SeekOSINT`,
+      description,
+    },
+    // Result pages are live data — don't let search engines cache stale snapshots
+    robots: { index: false, follow: false },
   }
 }
 
@@ -540,7 +558,7 @@ export default async function HostPage({
   if (!result) notFound()
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-10">
+    <main className="min-h-screen bg-neutral-950 px-4 pt-14 pb-10 sm:pt-10">
       <div className="mx-auto max-w-3xl space-y-4">
 
         {/* Header */}

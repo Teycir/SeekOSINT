@@ -4,14 +4,11 @@
  * Saves the current query to /api/targets (D1 saved_targets table).
  * Three states: idle → saving → saved (persists until page navigation).
  * Re-clicking a saved target is idempotent on the server (UPSERT).
- *
- * Usage:
- *   <SaveButton query="1.1.1.1" />
- *   <SaveButton query="example.com" label="Prod server" />
  */
 'use client'
 
 import { useState } from 'react'
+import { Tooltip } from './Tooltip'
 
 interface SaveButtonProps {
   query: string
@@ -55,14 +52,22 @@ export function SaveButton({ query, label }: SaveButtonProps) {
     error:  'text-red-400',
   }
 
+  const tooltipLabel: Record<State, string> = {
+    idle:   `Save ${query} to watched targets`,
+    saving: 'Saving…',
+    saved:  'Saved — manage in /saved',
+    error:  'Save failed — retry?',
+  }
+
   return (
-    <button
-      onClick={save}
-      disabled={state === 'saving'}
-      title={state === 'saved' ? 'Already saved — click to re-save' : `Save ${query} to watched targets`}
-      className={`text-xs font-mono transition-colors duration-150 ${colorClass[state]}`}
-    >
-      {text[state]}
-    </button>
+    <Tooltip label={tooltipLabel[state]}>
+      <button
+        onClick={save}
+        disabled={state === 'saving'}
+        className={`text-xs font-mono transition-colors duration-150 ${colorClass[state]}`}
+      >
+        {text[state]}
+      </button>
+    </Tooltip>
   )
 }

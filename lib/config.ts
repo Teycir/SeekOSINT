@@ -17,8 +17,10 @@
 export const RATE_LIMIT = {
   /** Sliding-window duration in seconds (1 hour). */
   WINDOW_SECONDS: 3600,
-  /** Maximum requests per IP per window. */
-  MAX_REQUESTS: 100,
+  /** Maximum requests per IP per window.
+   *  500 is generous for a legitimate researcher doing multi-host investigations
+   *  while still blocking scrapers. Previous value of 100 was too aggressive. */
+  MAX_REQUESTS: 500,
   /** KV key prefix for rate-limit counters. */
   KV_PREFIX: 'rl:ip:',
 } as const
@@ -33,8 +35,9 @@ export const CIRCUIT_BREAKER = {
   /** Failure ratio that trips the breaker (75 %). */
   TRIP_RATIO: 0.75,
   /** Minimum requests in a window before the breaker can trip.
-   *  10 prevents a single flaky request from locking out a source. */
-  MIN_REQUESTS_TO_TRIP: 10,
+   *  20 prevents a small burst of transient errors from locking out a source.
+   *  Previous value of 10 was too hair-trigger. */
+  MIN_REQUESTS_TO_TRIP: 20,
   /** KV key prefix for circuit-breaker state. */
   KV_PREFIX: 'cb:',
 } as const

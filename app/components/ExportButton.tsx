@@ -1,14 +1,13 @@
 'use client'
 /**
- * ExportButton — client component that downloads the current result as JSON.
- * Zero backend work: pure client-side JSON.stringify + Blob download.
+ * ExportButton — downloads the current result as JSON.
  */
 
+import { Tooltip } from './Tooltip'
+
 interface ExportButtonProps {
-  // Pass the serialised result as a string to avoid server→client hydration
-  // of a complex object. The host page JSON.stringify's it server-side.
   resultJson: string
-  filename: string
+  filename:   string
 }
 
 export function ExportButton({ resultJson, filename }: ExportButtonProps) {
@@ -23,12 +22,13 @@ export function ExportButton({ resultJson, filename }: ExportButtonProps) {
   }
 
   return (
-    <button
-      onClick={handleExport}
-      className="text-xs text-neutral-500 hover:text-neon-red font-mono transition-colors"
-      title="Download full result as JSON"
-    >
-      ↓ export json
-    </button>
+    <Tooltip label={`Download as ${filename}`}>
+      <button
+        onClick={handleExport}
+        className="text-xs text-neutral-500 hover:text-neon-red font-mono transition-colors"
+      >
+        ↓ export json
+      </button>
+    </Tooltip>
   )
 }

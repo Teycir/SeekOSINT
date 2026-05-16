@@ -113,16 +113,34 @@ const ALL_SOURCES = [
 
 /**
  * Wraps a source fetch with circuit-breaker guard.
- * - OPEN → immediately returns skipped()
- * - CLOSED / HALF-OPEN → calls fetcher, records success/failure
+ * - OPEN + cache hit  → returns cached data (status 'cached') so stale
+ *   results are still shown while the upstream recovers.
+ * - OPEN + cache miss → returns skipped() — nothing to show.
+ * - CLOSED / HALF-OPEN → calls fetcher, records success/failure.
+ *
+ * The optional `cacheKey` enables the cache-fallback path.  Pass it for
+ * any source whose KV key is trivially derivable here (crtsh, rdap, etc.)
+ * If omitted, OPEN always returns skipped() (original behaviour).
  */
 async function withBreaker<T>(
   source: string,
   kv: KVNamespace,
   fetcher: () => Promise<SourceResult<T>>,
+  cacheKey?: string,
 ): Promise<SourceResult<T>> {
   const state = await getBreakerState(source, kv)
   if (state === 'open') {
+    // Try to serve stale cache rather than returning nothing
+    if (cacheKey) {
+      try {
+        const raw = await kv.get(cacheKey)
+        if (raw) {
+          return { source, status: 'cached', data: JSON.parse(raw) as T }
+        }
+      } catch {
+        // Cache read failed — fall through to skipped
+      }
+    }
     return skipped<T>(source)
   }
 
@@ -337,9 +355,9 @@ export async function runLookup(
       : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
 
     // Domain + IP sources: always run regardless of CDN status
-    withBreaker('rdap',       env.KV, () => fetchRDAP(query, env.KV)),
-    withBreaker('crtsh',      env.KV, () => fetchCRTSH(query, env.KV)),
-    withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV, ipQuery)),
+    withBreaker('rdap',       env.KV, () => fetchRDAP(query, env.KV),       `rdap:domain:${query.normalised}`),
+    withBreaker('crtsh',      env.KV, () => fetchCRTSH(query, env.KV),      `crtsh:${query.normalised}`),
+    withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV, ipQuery), `passivedns:${query.normalised}`),
 
     // Robtex — skip for CDN IPs
     isCDNIP
