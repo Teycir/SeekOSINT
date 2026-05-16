@@ -25,6 +25,8 @@ interface VulnsStreamProps {
   query: string
   /** Pass through ?refresh=1 if present */
   refresh?: boolean
+  /** Turnstile token to pass to /api/stream for server-side verification */
+  tsToken?: string
 }
 
 type LoadState = 'idle' | 'loading' | 'done' | 'error'
@@ -56,7 +58,7 @@ function PulsingCard({ count }: { count: number }) {
   )
 }
 
-export function VulnsStream({ cveIds, query, refresh = false }: VulnsStreamProps) {
+export function VulnsStream({ cveIds, query, refresh = false, tsToken }: VulnsStreamProps) {
   const [vulns,  setVulns]  = useState<CVEDetail[]>([])
   const [status, setStatus] = useState<LoadState>('idle')
 
@@ -66,6 +68,7 @@ export function VulnsStream({ cveIds, query, refresh = false }: VulnsStreamProps
 
     const params = new URLSearchParams({ q: query })
     if (refresh) params.set('refresh', '1')
+    if (tsToken != null) params.set('ts', tsToken)
     const url = `/api/stream?${params.toString()}`
     const controller = new AbortController()
 

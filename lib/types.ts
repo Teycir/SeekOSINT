@@ -342,6 +342,7 @@ export interface Env {
   NVD_KEY: string
   ABUSECH_KEY: string
   ADMIN_TOKEN?: string
+  TURNSTILE_SECRET_KEY?: string
   /**
    * Optional webhook endpoint.  When set, the cron job POSTs a JSON payload
    * there for every target that has changed since the last snapshot.

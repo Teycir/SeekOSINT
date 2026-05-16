@@ -9,13 +9,18 @@ import { parseQuery } from '../lib/validate'
 import DecryptedText from './components/DecryptedText'
 import { AnimatedTagline } from './components/AnimatedTagline'
 import { RecentSearches } from './components/RecentSearches'
+import { TurnstileWidget, type TurnstileWidgetRef } from './components/TurnstileWidget'
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '0x4AAAAAADQJVkxovh3yHZkF'
 
 export default function HomePage() {
   const router = useRouter()
   const [input, setInput] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const turnstileRef = useRef<TurnstileWidgetRef>(null)
 
   // Global `/` shortcut — focus the search input (skip if already focused or typing elsewhere)
   useEffect(() => {
@@ -41,13 +46,18 @@ export default function HomePage() {
       return
     }
 
+    if (!turnstileToken) {
+      setValidationError('Security check not yet complete — please wait a moment.')
+      return
+    }
+
     setValidationError(null)
     setIsSearching(true)
-    router.push(`/host/${encodeURIComponent(parsed.normalised)}`)
+    router.push(`/host/${encodeURIComponent(parsed.normalised)}?ts=${encodeURIComponent(turnstileToken)}`)
   }
 
   return (
-    <main className="flex min-h-[85vh] flex-col items-center justify-center px-4">
+    <main className="flex min-h-[85vh] flex-col items-center justify-center px-4 gap-6">
       {/* Background glow */}
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
         <div className="h-[600px] w-[600px] rounded-full bg-neon-red/5 blur-[120px]" />
@@ -134,6 +144,23 @@ export default function HomePage() {
 
         {/* Recent searches — client-fetched from D1, hidden when empty */}
         <RecentSearches />
+      </div>
+
+      {/* Turnstile — outside max-w-xl so the iframe is never clipped.
+          Styled to match the app's dark/red aesthetic via a custom wrapper. */}
+      <div className="flex flex-col items-center gap-1">
+        <div className="rounded-lg border border-neon-red/20 bg-black/40 px-4 py-2 shadow-[0_0_12px_rgba(255,26,26,0.08)]">
+          <TurnstileWidget
+            ref={turnstileRef}
+            siteKey={TURNSTILE_SITE_KEY}
+            onSuccess={setTurnstileToken}
+            onExpire={() => setTurnstileToken(null)}
+            onError={() => setTurnstileToken(null)}
+          />
+        </div>
+        {!turnstileToken && (
+          <p className="text-[10px] text-neon-red/30 font-mono">verifying…</p>
+        )}
       </div>
     </main>
   )

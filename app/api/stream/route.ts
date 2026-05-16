@@ -37,6 +37,7 @@ export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
   const qRaw    = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
+  const tsToken = searchParams.get('ts')
 
   const { env, ctx } = getCloudflareContext()
   const typedEnv = env as unknown as Env
@@ -61,7 +62,25 @@ export async function GET(req: Request): Promise<Response> {
     })
     return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
   }
-  
+
+  // ── Turnstile token verification ───────────────────────────────────────────
+  const secretKey = typedEnv.TURNSTILE_SECRET_KEY
+  if (secretKey && tsToken) {
+    try {
+      const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret: secretKey, response: tsToken, remoteip: ip }),
+      })
+      const verifyJson = await verifyRes.json() as { success: boolean }
+      if (!verifyJson.success) {
+        return errorResponse(ErrorCode.INVALID_QUERY, 'turnstile verification failed', 403)
+      }
+    } catch (err) {
+      console.warn('[api/stream] turnstile verify error (allowing through):', err)
+    }
+  }
+
   // Sanitize query parameter
   const q = sanitizeQueryParam(qRaw, 500)
   
