@@ -73,9 +73,6 @@ export async function GET(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
   }
 
-  const { env, ctx } = getCloudflareContext()
-  const typedEnv = env as unknown as Env
-
   // ── Turnstile verification (before parseQuery — prevents format-oracle leakage) ──
   const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
   if (!ts.success) {
