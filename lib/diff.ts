@@ -139,10 +139,11 @@ export function diffHostResults(prev: HostResult, next: HostResult): TargetDiff 
   const prevFeodo = ok(prev.threat.feodo) && prev.threat.feodo.data !== null
   const nextFeodo = ok(next.threat.feodo) && next.threat.feodo.data !== null
   if (!prevFeodo && nextFeodo) {
+    const malware = next.threat.feodo.data?.malware
     threats.push({
       feed: 'feodo',
       direction: 'appeared',
-      detail: next.threat.feodo.data?.malware ?? undefined,
+      ...(malware ? { detail: malware } : {}),
     })
   }
   if (prevFeodo && !nextFeodo) threats.push({ feed: 'feodo', direction: 'resolved' })
