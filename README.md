@@ -153,8 +153,11 @@ Browser / curl
 │    └─ streams /api/stream?q=…       │
 │  app/api/recent/route.ts            │
 │    └─ recent searches for homepage  │
+│  app/targets/page.tsx               │
+│    └─ monitoring dashboard          │
 │  app/api/targets/route.ts           │
 │    └─ saved targets CRUD            │
+│        returns riskScore + lastDiff │
 └──────────────┬──────────────────────┘
                │
                ▼
@@ -191,7 +194,9 @@ Browser / curl
 │  seekosint-cron (Worker)            │
 │  wrangler.cron.toml                 │
 │  • hourly blocklist refresh         │
-│  • daily saved-target re-query      │
+│  • hourly saved-target re-query     │
+│    + typed diff (lib/diff.ts)       │
+│    + webhook on hasChanges          │
 └─────────────────────────────────────┘
 ```
 
@@ -239,6 +244,8 @@ SeekOSINT/
 │   ├── globals.css
 │   ├── about/                        # About page
 │   ├── faq/                          # FAQ page
+│   ├── targets/
+│   │   └── page.tsx                  # /targets — monitoring dashboard (risk + diffs)
 │   ├── host/[query]/
 │   │   └── page.tsx                  # SSR host report page (streams via /api/stream)
 │   ├── api/
@@ -246,7 +253,7 @@ SeekOSINT/
 │   │   ├── stream/route.ts           # GET /api/stream?q= (SSE streaming)
 │   │   ├── recent/route.ts           # GET /api/recent?limit=5
 │   │   ├── batch/route.ts            # POST /api/batch (multi-query)
-│   │   ├── targets/route.ts          # GET/POST /api/targets
+│   │   ├── targets/route.ts          # GET /api/targets (+ riskScore, lastDiff) · POST
 │   │   ├── targets/[id]/route.ts     # DELETE /api/targets/:id
 │   │   └── admin/reset-breaker/      # POST — manual circuit-breaker reset
 │   └── components/
@@ -258,6 +265,7 @@ SeekOSINT/
 │       ├── ExportButton.tsx          # JSON export (client, zero backend)
 │       ├── Footer.tsx
 │       ├── RecentSearches.tsx        # Recent queries from D1 (client)
+│       ├── RiskBadge.tsx             # Risk score pill with breakdown tooltip
 │       ├── SaveButton.tsx            # Save/unsave target
 │       ├── ScrollProgress.tsx
 │       ├── ShareButton.tsx
@@ -265,7 +273,7 @@ SeekOSINT/
 │       └── ui/                       # Shared UI primitives
 ├── worker/
 │   ├── lookup.ts                     # 4-layer orchestrator
-│   ├── cron.ts                       # Hourly blocklist refresh + daily target sweep
+│   ├── cron.ts                       # Hourly blocklist refresh + target sweep w/ typed diff
 │   ├── index.ts
 │   └── sources/
 │       ├── internetdb.ts
@@ -284,13 +292,16 @@ SeekOSINT/
 │   ├── types.ts                      # All TypeScript interfaces
 │   ├── cache.ts                      # KV cache wrapper (bypass on forceRefresh)
 │   ├── config.ts                     # All magic numbers: TTLs, timeouts, limits
+│   ├── diff.ts                       # TargetDiff — typed change detection between snapshots
 │   ├── errors.ts                     # Unified error format + ErrorCode enum
 │   ├── hooks.ts                      # Shared React hooks
 │   ├── keyring.ts                    # GHW 18-key rotation
 │   ├── logger.ts                     # Structured logging
 │   ├── merge.ts                      # Result merging
+│   ├── normalize.ts                  # Threat indicator normalization
 │   ├── ratelimit.ts                  # KV-based per-IP rate limiter + circuit breakers
 │   ├── results.ts                    # SourceResult helpers
+│   ├── risk.ts                       # computeRiskScore — scored 0–100 with breakdown
 │   ├── searches.ts                   # D1 helpers: recordSearch, getRecentSearches
 │   ├── targets.ts                    # D1 helpers: saveTarget, listTargets, removeTarget
 │   ├── textAnimation.ts              # Text animation utility
@@ -299,10 +310,13 @@ SeekOSINT/
 │   └── utils.ts
 ├── test/
 │   ├── cache.test.ts
+│   ├── diff.test.ts                  # Tests for diffHostResults + summariseDiff
 │   ├── keyring.test.ts
 │   ├── logger.test.ts
 │   ├── merge.test.ts
+│   ├── normalize.test.ts
 │   ├── results.test.ts
+│   ├── risk.test.ts
 │   ├── validate.test.ts
 │   └── sources/
 ├── docs/
@@ -499,8 +513,53 @@ await updateTargetSnapshot(db, id, resultJson)
 
 A standalone Worker (`worker/cron.ts`) is deployed separately via `wrangler.cron.toml`. It runs on an **hourly trigger** and performs two jobs:
 
-1. **Blocklist refresh** — checks if Feodo/SSLBL bulk lists are stale in KV and re-downloads them if needed.
-2. **Saved-target sweep** — re-queries every saved target and writes the fresh snapshot back to D1 (`checked_at`, `result_json`).
+1. **Blocklist refresh** — checks if Feodo/SSLBL bulk lists are stale and re-downloads them if needed.
+2. **Saved-target sweep** — re-queries every saved target, computes a typed `TargetDiff`, persists the fresh snapshot to D1, and POSTs a webhook payload when changes are detected.
+
+### Typed diff (`lib/diff.ts`)
+
+After each re-query, `diffHostResults(prev, next)` produces a structured `TargetDiff` covering:
+
+| Signal | What it detects |
+|---|---|
+| `ports` | Opened / closed ports (direction per port) |
+| `cves` | CVEs appeared / resolved, with CVSS severity and score |
+| `threats` | URLhaus, Feodo, SSLBL, ThreatFox feed changes |
+| `geo` | Country, ASN, or primary hostname changes |
+| `certExpiry` | Certs expiring within 30 days or newly expired (fires once per cert) |
+| `risk` | Risk score delta — only surfaces in `hasChanges` when Δ ≥ 5 points |
+
+`summariseDiff(diff, query)` converts the struct to a human-readable string for logs and webhook relay.
+
+### Webhook payload
+
+When `diff.hasChanges` is true and `WEBHOOK_URL` is set, the cron POSTs:
+
+```json
+{
+  "sentAt": 1716912000,
+  "events": [
+    {
+      "targetId": "abc123",
+      "query": "1.2.3.4",
+      "checkedAt": 1716912000,
+      "summary": "1.2.3.4:\n  port 3389 opened\n  CVE-2021-44228 appeared [CRITICAL 10]",
+      "diff": {
+        "diffedAt": 1716912000,
+        "hasChanges": true,
+        "ports": [{ "port": 3389, "direction": "opened" }],
+        "cves": [{ "id": "CVE-2021-44228", "direction": "appeared", "severity": "CRITICAL", "score": 10 }],
+        "threats": [],
+        "geo": [],
+        "certExpiry": [],
+        "risk": { "prev": 20, "next": 55, "delta": 35 }
+      }
+    }
+  ]
+}
+```
+
+The `diff` field is fully structured — consumers can branch on specific change types without parsing string lines. The `summary` field is pre-formatted for Slack/Discord relays.
 
 Deploy the cron worker:
 
@@ -513,7 +572,7 @@ Secrets for the cron worker are set separately:
 ```bash
 wrangler secret put NVD_KEY     --config wrangler.cron.toml
 wrangler secret put ABUSECH_KEY --config wrangler.cron.toml
-wrangler secret put WEBHOOK_URL --config wrangler.cron.toml  # optional change notifications
+wrangler secret put WEBHOOK_URL --config wrangler.cron.toml  # optional — fires on any hasChanges
 ```
 
 ---
@@ -673,14 +732,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased roadmap.
 - ✅ Saved targets (D1 CRUD, `/api/targets`)
 - ✅ SSE streaming results (`/api/stream`, `useHostStream`)
 - ✅ Batch CVE enrichment (10 concurrent, `lib/config.ts CVE.MAX_CONCURRENT`)
-- ✅ Cron worker — hourly blocklist refresh + daily target re-query
+- ✅ Cron worker — hourly blocklist refresh + hourly target re-query
+- ✅ Risk scoring (`lib/risk.ts`) — 0–100 score with per-category breakdown
+- ✅ Typed diff (`lib/diff.ts`) — `TargetDiff` with ports, CVEs, threats, geo, cert expiry, risk delta
+- ✅ Webhook diff — structured `TargetDiff` payload dispatched from cron on `hasChanges`
+- ✅ GET `/api/targets` enriched with `riskScore` and `lastDiff` per target
+- ✅ `/targets` monitoring dashboard — risk pills, diff chips, 60 s polling
 
 **Up next (ordered by priority):**
 - [ ] Turnstile abuse defense — Cloudflare widget + server-side token validation in `/api/lookup`
 - [ ] `/api/admin/health` — aggregate breaker states, KV hit rates, recent error trends
-- [ ] Threat indicator normalization (`lib/normalize.ts`) — deduplicate cross-feed hits into canonical `ThreatIndicator` with provenance and confidence
 - [ ] Batch lookup proper orchestration — deduplicated enrichment, shared cache reuse, progressive NDJSON streaming per item
-- [ ] Webhook diff on target re-query — structured diff payload (ports/CVEs/threat hits) dispatched from cron sweep
+- [ ] Persist `last_diff_json` column in `saved_targets` — surface diff history across multiple cron runs
 
 ---
 
