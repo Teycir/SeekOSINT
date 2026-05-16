@@ -26,8 +26,9 @@ export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
       await navigator.clipboard.writeText(value)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
+    } catch (err) {
       // clipboard API unavailable — silently ignore
+      console.warn('[CopyButton] clipboard write failed:', err)
     }
   }
 

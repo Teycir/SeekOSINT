@@ -106,7 +106,8 @@ export async function GET(req: Request): Promise<Response> {
       const meta = JSON.parse(raw) as BlocklistMeta
       const age  = Date.now() - meta.cachedAt
       return { fresh: age < ttlOneHour, cachedAt: meta.cachedAt }
-    } catch {
+    } catch (err) {
+      console.warn('[health] blocklist meta parse failed for', key, err)
       return { fresh: false, cachedAt: null }
     }
   }

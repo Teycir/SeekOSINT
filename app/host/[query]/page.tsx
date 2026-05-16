@@ -427,6 +427,75 @@ function WaybackSection({ result }: { result: HostResult }) {
   )
 }
 
+function RegistrationSection({ result }: { result: HostResult }) {
+  const rdap = result.core.rdap
+  if (!sourceOk(rdap)) return null
+  const d = rdap.data
+
+  const isExpired = d.expires && new Date(d.expires) < new Date()
+  const isExpiringSoon = d.expires && !isExpired &&
+    (new Date(d.expires).getTime() - Date.now()) < 30 * 24 * 60 * 60 * 1000
+
+  return (
+    <Card title="Registration (RDAP)">
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+        {d.registrar && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Registrar</dt>
+            <dd className="inline-flex items-center gap-1 text-sm">
+              {d.registrar}
+              <CopyButton value={d.registrar} />
+            </dd>
+          </div>
+        )}
+        {d.created && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Created</dt>
+            <dd className="font-mono text-sm">{d.created.slice(0, 10)}</dd>
+          </div>
+        )}
+        {d.expires && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Expires</dt>
+            <dd className="inline-flex items-center gap-2 font-mono text-sm">
+              {d.expires.slice(0, 10)}
+              {isExpired     && <Badge label="Expired"       variant="danger" />}
+              {isExpiringSoon && <Badge label="Expiring soon" variant="warn"   />}
+            </dd>
+          </div>
+        )}
+        {d.updated && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Updated</dt>
+            <dd className="font-mono text-sm">{d.updated.slice(0, 10)}</dd>
+          </div>
+        )}
+        {d.nameservers && d.nameservers.length > 0 && (
+          <div className="col-span-full">
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Nameservers</dt>
+            <dd className="flex flex-wrap gap-2">
+              {d.nameservers.map(ns => (
+                <span key={ns} className="inline-flex items-center gap-0.5 font-mono text-xs
+                                          bg-neutral-800 rounded px-2 py-0.5">
+                  {ns.toLowerCase()}
+                  <CopyButton value={ns.toLowerCase()} />
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
+        {d.status && d.status.length > 0 && (
+          <div className="col-span-full flex gap-1 flex-wrap">
+            {d.status.map(s => (
+              <Badge key={s} label={s.replace(/ /g, '\u00a0')} variant="muted" />
+            ))}
+          </div>
+        )}
+      </dl>
+    </Card>
+  )
+}
+
 function MetaBar({ result }: { result: HostResult }) {
   const { meta } = result
   return (
@@ -489,6 +558,7 @@ export default async function HostPage({
         </div>
 
         <OverviewSection result={result} />
+        <RegistrationSection result={result} />
         <PortsSection result={result} />
         {/* VulnsStream fetches CVE details client-side so NVD latency doesn't
             block the initial paint — geo/ports/threats all SSR above this. */}

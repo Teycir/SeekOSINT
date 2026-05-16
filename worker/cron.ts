@@ -31,7 +31,8 @@ async function shouldRefresh(db: D1Database, name: string): Promise<boolean> {
       .first<{ refreshed_at: number }>()
     if (!row) return true
     return (Math.floor(Date.now() / 1000) - row.refreshed_at) > BLOCKLIST_REFRESH_INTERVAL
-  } catch {
+  } catch (err) {
+    console.error('[cron] shouldRefresh query failed for', name, err)
     return true  // assume stale on error
   }
 }

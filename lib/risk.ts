@@ -32,7 +32,13 @@
  *   Shodan "honeypot" tag                          5
  *   Shodan "scanner" tag                           3
  *
- * Maximum raw score before cap: ~115 — ensures cap is reached only on
+ * DOMAIN REGISTRATION (RDAP, domain queries)    max  15
+ *   Newly registered < 30 days old              +15
+ *   Expired domain                              +10
+ *   Privacy-protected registrant                 +5
+ *   No nameservers                               +8
+ *
+ * Maximum raw score before cap: ~130 — ensures cap is reached only on
  * genuinely multi-signal hosts.
  *
  * Severity bands:
@@ -53,6 +59,7 @@ import type {
   FeodoEntry,
   SSLBLEntry,
   CVEDetail,
+  RDAPResult,
 } from './types'
 
 // ─── High-risk port list ───────────────────────────────────────────────────────
@@ -96,12 +103,13 @@ function clamp(v: number, min: number, max: number): number {
 // ─── Score breakdown ──────────────────────────────────────────────────────────
 
 export interface RiskBreakdown {
-  blocklists:  number
-  threatIntel: number
-  vulns:       number
-  ports:       number
-  networkFlags:number
-  total:       number       // capped 0–100
+  blocklists:         number
+  threatIntel:        number
+  vulns:              number
+  ports:              number
+  networkFlags:       number
+  domainRegistration: number
+  total:              number       // capped 0–100
 }
 
 export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
@@ -115,11 +123,12 @@ export interface RiskScore {
 // ─── Main scorer ──────────────────────────────────────────────────────────────
 
 export function computeRiskScore(result: HostResult): RiskScore {
-  let blocklists   = 0
-  let threatIntel  = 0
-  let vulnsScore   = 0
-  let portsScore   = 0
-  let networkFlags = 0
+  let blocklists          = 0
+  let threatIntel         = 0
+  let vulnsScore          = 0
+  let portsScore          = 0
+  let networkFlags        = 0
+  let domainRegistration  = 0
 
   // ── Blocklists ───────────────────────────────────────────────────────────
 
@@ -199,20 +208,54 @@ export function computeRiskScore(result: HostResult): RiskScore {
     if (tags.includes('scanner'))  networkFlags += 3
   }
 
+  // ── Domain registration signals (RDAP, domain queries only) ─────────────
+  // Primary phishing/typosquatting indicators: newly registered, expired,
+  // privacy-protected registrant, or missing nameservers.
+
+  const rdap = result.core.rdap
+  if (ok(rdap)) {
+    const r = rdap.data as RDAPResult
+    if (r.domain) {
+      // Newly registered domain (< 30 days) — top phishing signal
+      if (r.created) {
+        const ageMs = Date.now() - new Date(r.created).getTime()
+        const ageDays = ageMs / (1000 * 60 * 60 * 24)
+        if (ageDays < 30) domainRegistration += 15
+      }
+
+      // Expired domain — could be parked or hijacked
+      if (r.expires) {
+        if (new Date(r.expires).getTime() < Date.now()) domainRegistration += 10
+      }
+
+      // Privacy-protected registrant — redacted contact details
+      const hasPrivacyContact = r.contacts?.some(c =>
+        c.org?.toLowerCase().includes('privacy') ||
+        c.org?.toLowerCase().includes('redacted') ||
+        c.email?.toLowerCase().includes('privacy'),
+      )
+      if (hasPrivacyContact) domainRegistration += 5
+
+      // No nameservers — domain not properly delegated / parked
+      if (!r.nameservers || r.nameservers.length === 0) domainRegistration += 8
+    }
+  }
+
   // ── Totals ────────────────────────────────────────────────────────────────
 
   const breakdown: RiskBreakdown = {
-    blocklists:   clamp(blocklists,   0, 35),
-    threatIntel:  clamp(threatIntel,  0, 30),
-    vulns:        clamp(vulnsScore,   0, 25),
-    ports:        clamp(portsScore,   0, 15),
-    networkFlags: clamp(networkFlags, 0, 10),
+    blocklists:         clamp(blocklists,         0, 35),
+    threatIntel:        clamp(threatIntel,         0, 30),
+    vulns:              clamp(vulnsScore,          0, 25),
+    ports:              clamp(portsScore,          0, 15),
+    networkFlags:       clamp(networkFlags,        0, 10),
+    domainRegistration: clamp(domainRegistration,  0, 15),
     total: 0,
   }
 
   const raw = breakdown.blocklists + breakdown.threatIntel +
               breakdown.vulns      + breakdown.ports       +
-              breakdown.networkFlags
+              breakdown.networkFlags + breakdown.domainRegistration
 
   breakdown.total = clamp(raw, 0, 100)
 

@@ -99,7 +99,10 @@ export function VulnsStream({ cveIds, query, refresh = false, turnstileToken }: 
               } else if (frame.type === 'error') {
                 setStatus('error')
               }
-            } catch { /* skip malformed */ }
+            } catch (err) {
+              /* skip malformed */
+              console.warn('[VulnsStream] malformed JSON line:', line, err)
+            }
           }
         }
         setStatus(s => s === 'loading' ? 'done' : s)

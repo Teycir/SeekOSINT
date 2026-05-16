@@ -6,11 +6,13 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { getRecentSearches } from '../../../lib/searches'
+import { sanitizeInteger } from '../../../lib/sanitize'
 import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
-  const limit = Math.min(Number(searchParams.get('limit') ?? 5), 50)
+  const limitParam = searchParams.get('limit')
+  const limit = sanitizeInteger(limitParam, 5, 1, 50)
 
   try {
     const { env } = getCloudflareContext()

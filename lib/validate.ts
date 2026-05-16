@@ -1,4 +1,5 @@
 import type { LookupQuery, QueryType } from './types'
+import { sanitizeString, validateInput } from './sanitize'
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/
 const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
@@ -10,10 +11,21 @@ const ASN_RE = /^as\d+$/i
  *
  * Strips protocol prefixes and trailing paths before matching, so inputs like
  * "https://example.com/path" are handled gracefully.
+ *
+ * Includes injection detection as defense-in-depth.
  */
 export function parseQuery(raw: string): LookupQuery | null {
-  const s = raw
-    .trim()
+  // Sanitize and validate input first
+  const sanitized = sanitizeString(raw, 500)
+  
+  // Check for injection patterns
+  const validation = validateInput(sanitized)
+  if (!validation.valid) {
+    console.warn('[validate] rejected input:', validation.reason, sanitized.slice(0, 50))
+    return null
+  }
+  
+  const s = sanitized
     .toLowerCase()
     .replace(/^https?:\/\//, '')
     .replace(/\/.*$/, '')

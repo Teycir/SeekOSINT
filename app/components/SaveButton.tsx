@@ -34,8 +34,9 @@ export function SaveButton({ query, label }: SaveButtonProps) {
       })
       setState(res.ok ? 'saved' : 'error')
       if (!res.ok) setTimeout(() => setState('idle'), 3000)
-    } catch {
+    } catch (err) {
       setState('error')
+      console.error('[SaveButton] save failed:', err)
       setTimeout(() => setState('idle'), 3000)
     }
   }

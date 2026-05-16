@@ -406,4 +406,143 @@ describe('computeRiskScore', () => {
     expect(r.score).toBeLessThanOrEqual(100)
     expect(r.score).toBeGreaterThanOrEqual(75)
   })
+
+// ─── RDAP domain registration signals ────────────────────────────────────────
+
+  it('adds 15 for a newly registered domain (< 30 days)', () => {
+    const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'evil.com', type: 'domain', normalised: 'evil.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({ domain: 'evil.com', created: yesterday, nameservers: ['ns1.evil.com'], contacts: [] }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(15)
+  })
+
+  it('does not penalise an old domain for age', () => {
+    const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString()
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'legit.com', type: 'domain', normalised: 'legit.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({ domain: 'legit.com', created: twoYearsAgo, nameservers: ['ns1.legit.com'], contacts: [] }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(0)
+  })
+
+  it('adds 10 for an expired domain', () => {
+    const expired = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    const registered = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString()
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'parked.com', type: 'domain', normalised: 'parked.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({ domain: 'parked.com', created: registered, expires: expired, nameservers: ['ns1.park.com'], contacts: [] }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(10)
+  })
+
+  it('adds 5 for a privacy-protected registrant org', () => {
+    const registered = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'hidden.com', type: 'domain', normalised: 'hidden.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({
+          domain: 'hidden.com',
+          created: registered,
+          nameservers: ['ns1.hidden.com'],
+          contacts: [{ role: 'registrant', org: 'Domains By Proxy Privacy Protection' }],
+        }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(5)
+  })
+
+  it('adds 8 for missing nameservers', () => {
+    const registered = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'nodns.com', type: 'domain', normalised: 'nodns.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({ domain: 'nodns.com', created: registered, nameservers: [], contacts: [] }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(8)
+  })
+
+  it('caps domainRegistration at 15', () => {
+    // Brand-new + expired + privacy + no-NS = 15+10+5+8 = 38 → capped at 15
+    const yesterday = new Date(Date.now() - 1000).toISOString() // just now = created AND expires yesterday
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'maxed.com', type: 'domain', normalised: 'maxed.com' },
+      core: {
+        ...baseResult().core,
+        rdap: sr({
+          domain: 'maxed.com',
+          created:  yesterday,
+          expires:  yesterday,
+          nameservers: [],
+          contacts: [{ role: 'registrant', org: 'Redacted for Privacy' }],
+        }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(15)
+  })
+
+  it('does not add RDAP domain signals for IP result with ip-only RDAPResult', () => {
+    // RDAPResult with only ip/cidr fields (no .domain) should not trigger any domain scoring
+    const r = computeRiskScore(baseResult({
+      core: {
+        ...baseResult().core,
+        rdap: sr({ ip: '1.2.3.4', cidr: '1.2.3.0/24', networkName: 'ACME', contacts: [] }),
+      },
+    }))
+    expect(r.breakdown.domainRegistration).toBe(0)
+  })
+
+// ─── Feodo/SSLBL type guard — domain→IP resolved query ───────────────────────
+// Regression: ensures that effectiveIPQuery (type:'ip') constructed post-DNS
+// resolution correctly passes the type guard inside fetchFeodo/fetchSSLBL.
+// This test validates the risk scorer's behaviour when those sources return
+// data via the resolved-IP path (simulating a domain lookup).
+
+  it('scores Feodo hit arriving via a domain query (resolvedIP path)', () => {
+    // Simulate: user typed "malicious.example.com", DNS resolved to 5.6.7.8,
+    // Feodo returned a hit for 5.6.7.8. The HostResult.query is still domain.
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'malicious.example.com', type: 'domain', normalised: 'malicious.example.com' },
+      resolvedIP: '5.6.7.8',
+      threat: {
+        ...baseResult().threat,
+        feodo: sr({
+          ip_address: '5.6.7.8', port: 80, status: 'Online' as const,
+          hostname: null, as_number: 0, as_name: '', country: 'XX',
+          first_seen: '2025-01-01', last_seen: '2025-05-01', malware: 'QakBot',
+        }),
+      },
+    }))
+    // Must detect the Feodo hit and score it — type guard must not skip it
+    expect(r.breakdown.blocklists).toBe(35)
+    expect(r.severity).not.toBe('LOW')
+  })
+
+  it('scores SSLBL hit arriving via a domain query (resolvedIP path)', () => {
+    const r = computeRiskScore(baseResult({
+      query: { raw: 'c2-server.example.com', type: 'domain', normalised: 'c2-server.example.com' },
+      resolvedIP: '9.10.11.12',
+      threat: {
+        ...baseResult().threat,
+        sslbl: sr([{
+          SHA1: 'deadbeef', Listingdate: '2025-01-01', Listingtime: '00:00',
+          SuspiciousReason: 'Dridex botnet', DstIP: '9.10.11.12', DstPort: 443,
+        }]),
+      },
+    }))
+    expect(r.breakdown.blocklists).toBe(25)
+  })
 })

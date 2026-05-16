@@ -21,6 +21,7 @@
  */
 import { getCloudflareContext }      from '@opennextjs/cloudflare'
 import { resetBreaker }              from '../../../../lib/ratelimit'
+import { sanitizeString, validateInput } from '../../../../lib/sanitize'
 import { errorResponse, ErrorCode }  from '../../../../lib/errors'
 import type { Env }                  from '../../../../lib/types'
 
@@ -31,7 +32,7 @@ const ALL_SOURCES = [
   'ipapi',
   'bgpview',
   'rdap',
-  'certsh',
+  'crtsh',
   'passivedns',
   'robtex',
   'urlhaus',
@@ -40,8 +41,7 @@ const ALL_SOURCES = [
   'feodo',
   'sslbl',
   'nvd',
-  'circl',
-  'grayhatwarfare',
+  'ghw',
   'wayback',
 ] as const
 
@@ -74,7 +74,8 @@ export async function POST(req: Request): Promise<Response> {
   let body: { source?: unknown }
   try {
     body = await req.json()
-  } catch {
+  } catch (err) {
+    console.error('[admin/reset-breaker] JSON parse failed:', err)
     return errorResponse(ErrorCode.INVALID_QUERY, 'request body must be JSON', 400)
   }
 
@@ -86,7 +87,16 @@ export async function POST(req: Request): Promise<Response> {
     )
   }
 
-  const source = body.source.trim()
+  const source = sanitizeString(body.source, 50).trim()
+  
+  // Validate source name (alphanumeric + underscore only)
+  if (source !== '*' && !/^[a-z0-9_]+$/i.test(source)) {
+    return errorResponse(
+      ErrorCode.INVALID_QUERY,
+      'invalid source name — must be alphanumeric or "*"',
+      400,
+    )
+  }
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   try {

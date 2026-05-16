@@ -18,8 +18,9 @@ export function ShareButton({ query }: { query: string }) {
       try {
         await navigator.share({ title: `seekosint — ${query}`, url })
         return
-      } catch {
+      } catch (err) {
         // user cancelled share sheet — fall through to clipboard
+        console.debug('[ShareButton] share cancelled or failed:', err)
       }
     }
 
@@ -27,8 +28,9 @@ export function ShareButton({ query }: { query: string }) {
       await navigator.clipboard.writeText(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } catch (err) {
       // silently ignore
+      console.warn('[ShareButton] clipboard write failed:', err)
     }
   }
 

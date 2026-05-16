@@ -49,7 +49,8 @@ export async function safeJson<T>(
   let parsed: unknown
   try {
     parsed = await res.json()
-  } catch {
+  } catch (err) {
+    console.error(`[${label}] JSON parse failed:`, err)
     throw new Error(`${label}: response body is not valid JSON`)
   }
   if (parsed === null || parsed === undefined) {

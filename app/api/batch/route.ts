@@ -13,6 +13,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
+import { sanitizeStringArray, validateInput } from '../../../lib/sanitize'
 import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { recordSearch } from '../../../lib/searches'
@@ -31,7 +32,8 @@ export async function POST(req: Request): Promise<Response> {
   let body: { queries?: unknown }
   try {
     body = await req.json()
-  } catch {
+  } catch (err) {
+    console.error('[api/batch] JSON parse failed:', err)
     return errorResponse(ErrorCode.INVALID_QUERY, 'request body must be JSON', 400)
   }
 
@@ -39,12 +41,20 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, 'queries must be a non-empty array', 400)
   }
 
-  const rawQueries = (body.queries as unknown[])
-    .filter(q => typeof q === 'string')
-    .slice(0, MAX_BATCH) as string[]
+  // Sanitize array input with limits
+  const rawQueries = sanitizeStringArray(body.queries, MAX_BATCH, 500)
 
   if (rawQueries.length === 0) {
     return errorResponse(ErrorCode.INVALID_QUERY, 'no valid string queries provided', 400)
+  }
+  
+  // Validate each query for injection patterns
+  for (const q of rawQueries) {
+    const validation = validateInput(q)
+    if (!validation.valid) {
+      console.warn('[api/batch] rejected query:', validation.reason, q.slice(0, 50))
+      return errorResponse(ErrorCode.INVALID_QUERY, `invalid input in batch: ${validation.reason}`, 400)
+    }
   }
 
   const { env, ctx } = getCloudflareContext()

@@ -89,8 +89,9 @@ export function useHostStream(query: string, refresh = false): HostStreamResult 
                 setErrMsg(d.message ?? 'unknown error')
                 setState('error')
               }
-            } catch {
+            } catch (err) {
               // malformed JSON line — skip
+              console.warn('[useHostStream] malformed JSON line:', line, err)
             }
           }
         }

@@ -126,9 +126,11 @@ export async function fetchMalwareBazaar(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
+    // Use search_ioc for IP/domain queries — search_tag matches malware family
+    // names only and silently returns nothing for network IOCs.
     const body = hash
       ? { query: 'search_hash', hash }
-      : { query: 'search_tag', tag: query.normalised }
+      : { query: 'search_ioc', ioc: query.normalised }
 
     const data = await abusePost<MalwareBazaarResult>(
       'https://mb-api.abuse.ch/api/v1/',

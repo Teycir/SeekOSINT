@@ -1,6 +1,6 @@
 # SeekOSINT — Roadmap
 
-> Last updated: 16 May 2026
+> Last updated: 16 May 2026 (pipeline logic audit added)
 
 ---
 
@@ -118,3 +118,43 @@ Ordered by impact-to-effort ratio. Based on external architecture review (May 20
 | RSS feed | Webhooks are what security teams actually use |
 | Bloom filter for blocklists | D1 indexed lookup is simpler and fast enough |
 | Grafana dashboard | Cloudflare Analytics covers it |
+
+---
+
+## 🐛 Pipeline logic fixes — query coverage audit (May 2026)
+
+Identified by systematically checking which sources run for each query type (IP / domain / ASN)
+and what each source actually sends to upstream APIs. Ordered by impact on user value.
+
+### [CRITICAL] 1 · ASN queries show almost nothing
+- [x] BGPView runs and returns prefixes, but every other source returns `skipped` for ASN type.
+- [x] Fix: after BGPView returns, pick the first announced prefix, derive a representative IP (e.g. first host of `185.26.182.0/24`), construct a synthetic `ipQuery`, and fan it into InternetDB, ip-api, Robtex, PassiveDNS, and all abuse.ch sources in parallel.
+- [x] Turns a 1-card ASN result into a full intelligence report with ports, geo, CVEs, and threat intel.
+
+### [CRITICAL] 2 · Threat intel never searches the domain string
+- [x] After DNS resolution, `effectiveIPQuery` is used for URLhaus, ThreatFox, and MalwareBazaar. The original domain name is never searched — a domain listed as malicious in URLhaus gets a clean result.
+- [x] Fix: run threat intel with **both** the resolved IP and the original domain query in parallel; merge results and deduplicate by IOC before caching.
+
+### [HIGH] 3 · PassiveDNS only queries the domain, not the resolved IP
+- [x] CIRCL PDNS accepts both IPs and domains. Querying by IP returns all domains that ever resolved to it — a critical shared-hosting pivot that's currently never made.
+- [x] Fix: for domain queries, run PassiveDNS twice (domain + resolved IP) and merge both result sets before returning.
+
+### [HIGH] 4 · crt.sh wildcard misses apex certificates
+- [x] Query is `%.domain` — the `%` prefix matches subdomains only. A cert issued to the apex domain itself (e.g. `allocine.fr`) is invisible.
+- [x] Fix: run two fetches — `%.domain` (current) and `domain` (apex) — then deduplicate by `id` before caching. One extra fetch, significant coverage improvement.
+
+### [HIGH] 5 · MalwareBazaar uses tag search instead of IOC search
+- [x] Request body is `{ query: "search_tag", tag: query.normalised }`. Tag search matches malware family names (e.g. "Emotet"), not IP addresses or domains. Every IP and domain lookup silently returns nothing.
+- [x] Fix: use `{ query: "search_ioc", ioc: query.normalised }` for IP and domain queries. Tag search is only appropriate when the input is a malware family name.
+
+### [HIGH] 6 · BGPView skips domain queries even after DNS resolution
+- [x] BGPView receives the original `query` (type=domain) and hits `if (query.type === 'domain') return skipped`. The resolved IP is never passed to it.
+- [x] Fix: pass `effectiveIPQuery` to BGPView for domain lookups (same pattern as InternetDB). ASN, prefix block, RIR, and org name will then populate the Overview card for all domain queries. One-line fix in `lookup.ts`.
+
+### [MEDIUM] 7 · Risk score has no domain-specific signals
+- [x] `computeRiskScore()` only reads IP-sourced signals (ports, CVEs, geo flags, blocklists). For domain queries the RDAP result is already present but ignored by the scorer.
+- [x] Fix: add RDAP signals to `lib/risk.ts`: newly registered domain < 30 days old (+15), expired domain (+10), privacy-protected registrant (+5), no nameservers (+8). These are the primary phishing/typosquat indicators.
+
+### [MEDIUM] 8 · Verify Feodo/SSLBL type guard passes for resolved-IP queries
+- [x] Both sources guard on `query.type !== 'ip'`. The `effectiveIPQuery` constructed post-DNS-resolution does set `type: 'ip'` explicitly, so this *should* work — but warrants a logged confirmation or unit test to ensure the guard isn't tripping on a serialisation edge case in the D1 path.
+- [x] Fix: added tests in `test/risk.test.ts` covering the Feodo/SSLBL path with a synthetic domain→IP resolved query, verifying the scorer correctly processes hits arriving via the resolvedIP path.

@@ -6,6 +6,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
+import { sanitizeLabel, sanitizeNotes, validateInput } from '../../../lib/sanitize'
 import { saveTarget, listTargets } from '../../../lib/targets'
 import { diffHostResults } from '../../../lib/diff'
 import type { TargetDiff } from '../../../lib/diff'
@@ -57,8 +58,9 @@ export async function GET(): Promise<Response> {
           if (stored) {
             lastDiff = stored
           }
-        } catch {
+        } catch (err) {
           // Malformed snapshot — surface null rather than 500
+          console.warn('[api/targets] failed to parse result_json for target', row.id, err)
         }
       }
 
@@ -86,12 +88,20 @@ export async function POST(req: Request): Promise<Response> {
   let body: { query?: unknown; label?: unknown; notes?: unknown }
   try {
     body = await req.json()
-  } catch {
+  } catch (err) {
+    console.error('[api/targets] JSON parse failed:', err)
     return errorResponse(ErrorCode.INVALID_QUERY, 'request body must be JSON', 400)
   }
 
   if (typeof body.query !== 'string' || !body.query.trim()) {
     return errorResponse(ErrorCode.INVALID_QUERY, 'query is required', 400)
+  }
+  
+  // Validate for injection patterns before parsing
+  const validation = validateInput(body.query)
+  if (!validation.valid) {
+    console.warn('[api/targets] rejected query:', validation.reason)
+    return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
   }
 
   const parsed = parseQuery(body.query)
@@ -99,8 +109,8 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query — must be IPv4, IPv6, domain, or ASN', 422)
   }
 
-  const label = typeof body.label === 'string' ? body.label.slice(0, 100) : null
-  const notes = typeof body.notes === 'string' ? body.notes.slice(0, 500) : null
+  const label = typeof body.label === 'string' ? sanitizeLabel(body.label, 100) : null
+  const notes = typeof body.notes === 'string' ? sanitizeNotes(body.notes, 500) : null
 
   try {
     const { env } = getCloudflareContext()

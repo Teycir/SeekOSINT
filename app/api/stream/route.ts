@@ -23,6 +23,7 @@
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
+import { sanitizeQueryParam, validateInput } from '../../../lib/sanitize'
 import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
@@ -32,11 +33,21 @@ import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
-  const q       = searchParams.get('q')
+  const qRaw    = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
   const tsToken = searchParams.get('ts')
 
-  if (!q) return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
+  if (!qRaw) return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
+  
+  // Sanitize query parameter
+  const q = sanitizeQueryParam(qRaw, 500)
+  
+  // Validate for injection patterns
+  const validation = validateInput(q)
+  if (!validation.valid) {
+    console.warn('[api/stream] rejected query:', validation.reason, q.slice(0, 50))
+    return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
+  }
 
   const { env, ctx } = getCloudflareContext()
   const typedEnv = env as unknown as Env

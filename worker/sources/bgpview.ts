@@ -20,6 +20,8 @@ export async function fetchBGPView(
   query: LookupQuery,
   kv: KVNamespace,
 ): Promise<SourceResult<BGPViewResult>> {
+  // Domain queries are skipped — caller must pass effectiveIPQuery (resolved IP)
+  // so that domain lookups still get ASN/prefix/RIR context.
   if (query.type === 'domain') return skipped(SOURCE)
 
   let url: string
