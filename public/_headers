@@ -1,7 +1,5 @@
 /*
-  # NOTE: Content-Security-Policy is set by middleware.ts (runs inside the Worker)
-  # because Cloudflare Pages overwrites any CSP set here with its own nonce-based
-  # policy. The middleware header wins over the Pages injection layer.
-  #
-  # Permissions-Policy is kept here as a secondary hint; it is also set by middleware.
-  Permissions-Policy: browsing-topics=(), interest-cohort=()
+  CSP is set via next.config.ts headers() — not here.
+  Cloudflare Pages overwrites _headers CSP with a nonce-based policy.
+  next.config.ts headers() bakes the CSP into the build and wins.
+*/
