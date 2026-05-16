@@ -47,7 +47,8 @@ export async function saveTarget(
     .bind(query, label, notes)
     .first<{ id: string }>()
 
-  return insert!.id
+  if (!insert) throw new Error(`saveTarget: INSERT RETURNING returned no row for query="${query}"`)
+  return insert.id
 }
 
 /**

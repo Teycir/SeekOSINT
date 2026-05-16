@@ -63,6 +63,11 @@ export interface ThreatIndicator {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Deduplicate, lowercase, sort, and assert the result is a ThreatFeed array. */
+function dedupFeeds(arr: ThreatFeed[]): ThreatFeed[] {
+  return [...new Set(arr)].sort() as ThreatFeed[]
+}
+
 /** Deduplicate, lowercase and sort an array of strings. */
 function dedup(arr: (string | null | undefined)[]): string[] {
   return [...new Set(
@@ -220,7 +225,7 @@ function mergeIndicators(a: ThreatIndicator, b: ThreatIndicator): ThreatIndicato
     iocType:         a.iocType !== 'unknown' ? a.iocType : b.iocType,
     threatType:      a.threatType !== 'unknown' ? a.threatType : b.threatType,
     malwareFamilies: dedup([...a.malwareFamilies, ...b.malwareFamilies]),
-    provenance:      dedup([...a.provenance, ...b.provenance]) as ThreatFeed[],
+    provenance:      dedupFeeds([...a.provenance, ...b.provenance]),
     confidence:      Math.max(a.confidence, b.confidence),
     firstSeen:       earlierDate(a.firstSeen, b.firstSeen),
     lastSeen:        laterDate(a.lastSeen, b.lastSeen),

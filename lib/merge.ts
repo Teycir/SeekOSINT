@@ -40,6 +40,8 @@ interface MergeInput {
   resolvedIP?: string | null
   /** True when the domain could not be resolved to any IP. */
   dnsResolutionFailed?: boolean
+  /** True when an ASN query could not derive a representative IP from BGPView. */
+  asnIPDerivationFailed?: boolean
   core: {
     internetdb: PromiseSettledResult<SourceResult<InternetDBResult>>
     geo:        PromiseSettledResult<SourceResult<IPAPIResult>>
@@ -159,6 +161,7 @@ export function mergeResults(input: MergeInput): HostResult {
     ...(resolvedIP !== undefined && { resolvedIP }),
     ...(resolvedDomain !== undefined && { resolvedDomain }),
     ...(input.dnsResolutionFailed && { dnsResolutionFailed: true }),
+    ...(input.asnIPDerivationFailed && { asnIPDerivationFailed: true }),
     core,
     threat,
     normalizedThreats: normalizeThreatIndicators({

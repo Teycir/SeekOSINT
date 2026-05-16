@@ -284,9 +284,21 @@ export default {
           }
         }
 
-        // Persist fresh snapshot regardless of diff outcome
-        await updateTargetSnapshot(env.DB, target.id, nextJson)
-        console.log(`[cron] updated snapshot for ${target.query}`)
+        // Persist fresh snapshot — wrap in waitUntil so a Worker termination
+        // just before the write completes doesn't silently lose the snapshot.
+        await new Promise<void>((resolve) => {
+          ctx.waitUntil(
+            updateTargetSnapshot(env.DB, target.id, nextJson)
+              .then(() => {
+                console.log(`[cron] updated snapshot for ${target.query}`)
+                resolve()
+              })
+              .catch(writeErr => {
+                console.error(`[cron] failed to persist snapshot for ${target.query}`, writeErr)
+                resolve()  // resolve anyway so the loop continues
+              }),
+          )
+        })
       } catch (err) {
         console.error(`[cron] lookup failed for ${target.query}`, err)
       }

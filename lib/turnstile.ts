@@ -53,7 +53,13 @@ export async function verifyTurnstileToken(
       return { success: false, reason: `siteverify HTTP ${res.status}` }
     }
 
-    const data = await res.json() as { success: boolean; 'error-codes'?: string[] }
+    let data: { success: boolean; 'error-codes'?: string[] }
+    try {
+      data = await res.json() as { success: boolean; 'error-codes'?: string[] }
+    } catch (parseErr) {
+      console.error('[turnstile] siteverify response is not valid JSON', parseErr)
+      return { success: false, reason: 'siteverify returned non-JSON response' }
+    }
 
     if (!data.success) {
       return {

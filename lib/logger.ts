@@ -159,7 +159,7 @@ export function redactUrl(url: string): string {
       if (u.searchParams.has(key)) u.searchParams.set(key, '[REDACTED]')
     }
     return u.toString()
-  } catch {
+  } catch (_err) {
     // If the URL is somehow unparseable, redact the whole thing
     return '[UNPARSEABLE_URL]'
   }

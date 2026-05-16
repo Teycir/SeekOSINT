@@ -159,8 +159,10 @@ async function withBreaker<T>(
 
   if (result.status === 'error') {
     await recordBreakerFailure(source, kv)
-  } else {
-    // ok, cached, skipped — all considered non-failures
+  } else if (result.status !== 'skipped') {
+    // ok, cached — non-failures. skipped is intentional and must NOT reset an
+    // open breaker (e.g. Feodo skipped for domain queries must not clear a
+    // breaker that tripped open due to real upstream failures).
     await recordBreakerSuccess(source, kv)
   }
 
@@ -257,12 +259,17 @@ export async function runLookup(
   //    intel) can be fanned in.  Without this every ASN query returns only
   //    the single BGPView card.
   let asnSyntheticIPQuery: LookupQuery | null = null
+  // Capture the pre-flight BGPView result so the main fan-out can reuse it
+  // rather than fetching BGPView a second time (which wastes quota and fires
+  // the circuit-breaker accounting twice for the same request).
+  let bgpPreflightResult: SourceResult<BGPViewResult> | null = null
   if (query.type === 'asn') {
     // BGPView is called first in a short pre-flight to get the prefix list.
     // We use it to pick the first /24 host (.1) as the representative IP.
     const bgpPreflight = await withBreaker(
       'bgpview', env.KV, () => fetchBGPView(query, env.KV),
     )
+    bgpPreflightResult = bgpPreflight
     const bgpData = (bgpPreflight.status === 'ok' || bgpPreflight.status === 'cached') 
       ? bgpPreflight.data as BGPViewResult | null
       : null
@@ -277,17 +284,17 @@ export async function runLookup(
       const network = firstPrefix.split('/')[0]
       if (network) {
         const parts = network.split('.')
-        // Pick the first candidate; CDN detection is skipped for ASN queries
-        // so we don't need InternetDB pre-flight to select among candidates.
-        const candidates = ['1', '2', '254']
-        const lastOctet = candidates[0]
-        parts[3] = lastOctet
-        const syntheticIP = parts.join('.')
-        asnSyntheticIPQuery = {
-          raw: syntheticIP,
-          type: 'ip',
-          normalised: syntheticIP,
-          forceRefresh: query.forceRefresh ?? false,
+        if (parts.length === 4) {
+          // Pick the first candidate; CDN detection is skipped for ASN queries
+          // so we don't need InternetDB pre-flight to select among candidates.
+          parts[3] = '1'
+          const syntheticIP = parts.join('.')
+          asnSyntheticIPQuery = {
+            raw: syntheticIP,
+            type: 'ip',
+            normalised: syntheticIP,
+            forceRefresh: query.forceRefresh ?? false,
+          }
         }
       }
     }
@@ -372,9 +379,13 @@ export async function runLookup(
     isCDNIP
       ? Promise.resolve({ source: 'ipapi',   status: 'skipped' as const, data: null })
       : withBreaker('ipapi', env.KV, () => fetchIPAPI(effectiveIPQuery, env.KV)),
-    isCDNIP
-      ? Promise.resolve({ source: 'bgpview', status: 'skipped' as const, data: null })
-      : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
+    // BGPView: for ASN queries, reuse the pre-flight result to avoid a
+    // duplicate fetch and double circuit-breaker accounting.
+    bgpPreflightResult !== null
+      ? Promise.resolve(bgpPreflightResult)
+      : isCDNIP
+        ? Promise.resolve({ source: 'bgpview', status: 'skipped' as const, data: null })
+        : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
 
     // Domain + IP sources: always run regardless of CDN status
     withBreaker('rdap',  env.KV, () => fetchRDAP(query, env.KV),  `rdap:domain:${query.normalised}`),
@@ -438,9 +449,13 @@ export async function runLookup(
   ): PromiseSettledResult<SourceResult<T>> {
     const aOk = a.status === 'fulfilled' && (a.value.status === 'ok' || a.value.status === 'cached')
     const bOk = b.status === 'fulfilled' && (b.value.status === 'ok' || b.value.status === 'cached')
-    if (aOk) return a
-    if (bOk) return b
-    return a
+    if (aOk && !bOk) return a
+    if (bOk && !aOk) return b
+    if (aOk && bOk) return a   // both ok — keep IP path (a) as primary
+    // Neither ok — prefer domain path (b) over IP-path error so a skipped/error
+    // from a CDN-blocked IP doesn't shadow a valid domain-path result.
+    const bUsable = b.status === 'fulfilled' && b.value.status !== 'error'
+    return bUsable ? b : a
   }
 
   function pickWorstURLhaus(
@@ -512,8 +527,9 @@ export async function runLookup(
     query,
     // Pass the DoH-resolved IP explicitly so merge always shows it even
     // when geo/ipapi was skipped (CDN path). Also signals DNS failure.
-    resolvedIP:         ipQuery?.normalised ?? null,
-    dnsResolutionFailed: query.type === 'domain' && ipQuery === null,
+    resolvedIP:           ipQuery?.normalised ?? null,
+    dnsResolutionFailed:  query.type === 'domain' && ipQuery === null,
+    asnIPDerivationFailed: query.type === 'asn' && asnSyntheticIPQuery === null,
     core: {
       internetdb: internetdbResult,
       geo:        geoResult,

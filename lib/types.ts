@@ -269,12 +269,15 @@ export interface HostResult {
   query: LookupQuery
   /** For domain queries: the A record IP DNS resolved to. Null if DNS failed. */
   resolvedIP?: string
-  /** For IP queries: the PTR/rDNS hostname, if available. */
+  /** For IP queries: the PTR/rDNS hostname, if available (sourced from InternetDB hostnames). */
   resolvedDomain?: string
   /** True when a domain query could not be resolved to an IP via DoH.
    *  IP-based sources (geo, ports, threat intel) will all be skipped.
    *  Domain-string sources (RDAP, certs, passive DNS) still run. */
   dnsResolutionFailed?: boolean
+  /** True when an ASN query could not derive a representative IP from BGPView
+   *  (e.g. the ASN has no announced prefixes). IP-only sources are all skipped. */
+  asnIPDerivationFailed?: boolean
 
   // Layer 1
   core: {

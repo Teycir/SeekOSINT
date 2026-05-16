@@ -75,7 +75,7 @@ export async function POST(req: Request): Promise<Response> {
       { resetInSeconds: rl.resetInSeconds },
       {
         'X-RateLimit-Limit':     '100',
-        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Remaining': String(rl.remaining),
         'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
         'Retry-After':           String(rl.resetInSeconds),
       },

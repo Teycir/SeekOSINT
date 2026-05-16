@@ -100,8 +100,7 @@ export async function GET(): Promise<Response> {
     })
   } catch (err) {
     console.error('[api/targets] GET failed', err)
-    const message = err instanceof Error ? err.message : 'internal server error'
-    return errorResponse(ErrorCode.INTERNAL_ERROR, message, 500)
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'internal server error', 500)
   }
 }
 

@@ -28,6 +28,8 @@ export async function GET(req: Request): Promise<Response> {
     })
   } catch (err) {
     console.error('[api/recent] error', err)
-    return Response.json({ searches: [] })
+    // Return empty rather than 500 — recent searches is non-critical UI data.
+    // Log is sufficient; a hard error here should not break the page render.
+    return Response.json({ searches: [], error: 'failed to load recent searches' }, { status: 200 })
   }
 }

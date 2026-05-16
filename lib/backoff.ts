@@ -60,7 +60,15 @@ export async function withBackoff(
       const res = await fn()
 
       if (res.status === 429) {
-        const delay = jitteredDelay(attempt, baseDelayMs, maxDelayMs)
+        // Respect the upstream's Retry-After header when present; fall back to
+        // exponential jitter so we don't retry before the quota actually resets.
+        const retryAfterHeader = res.headers.get('Retry-After')
+        const retryAfterMs = retryAfterHeader
+          ? parseFloat(retryAfterHeader) * 1000   // header is in seconds
+          : NaN
+        const delay = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+          ? Math.min(retryAfterMs, maxDelayMs)
+          : jitteredDelay(attempt, baseDelayMs, maxDelayMs)
         console.warn(
           `[${source}] 429 rate-limited — waiting ${Math.round(delay)}ms` +
           ` (attempt ${attempt + 1}/${maxAttempts})`,

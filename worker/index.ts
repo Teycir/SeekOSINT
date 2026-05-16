@@ -31,9 +31,9 @@ export default {
         {
           status: 429,
           headers: {
-            'Retry-After':       String(rl.resetInSeconds),
-            'X-RateLimit-Limit': '100',
-            'X-RateLimit-Remaining': '0',
+            'Retry-After':           String(rl.resetInSeconds),
+            'X-RateLimit-Limit':     '100',
+            'X-RateLimit-Remaining': String(rl.remaining),
           },
         },
       )

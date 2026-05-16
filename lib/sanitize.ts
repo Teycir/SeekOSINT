@@ -281,7 +281,7 @@ export function sanitizeJSON<T>(
   try {
     parsed = JSON.parse(input)
   } catch (err) {
-    return { success: false, error: 'invalid JSON' }
+    return { success: false, error: `invalid JSON: ${err}` }
   }
   
   if (validator && !validator(parsed)) {
@@ -309,9 +309,8 @@ export function sanitizeURL(input: string, allowedProtocols = ['http:', 'https:'
     url.password = ''
     
     return url.toString()
-  } catch (err) {
-    // URL constructor throws on invalid input — expected, not loggable
-    void err
+  } catch (_err) {
+    // URL constructor throws TypeError on invalid input — expected, not a bug
     return null
   }
 }

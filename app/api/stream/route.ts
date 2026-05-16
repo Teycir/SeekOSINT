@@ -152,7 +152,7 @@ export async function GET(req: Request): Promise<Response> {
       { resetInSeconds: rl.resetInSeconds },
       {
         'X-RateLimit-Limit':     String(RATE_LIMIT.MAX_REQUESTS),
-        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Remaining': String(rl.remaining),
         'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
         'Retry-After':           String(rl.resetInSeconds),
       },

@@ -76,8 +76,8 @@ export async function fetchCertSpotter(
     let parsed: unknown
     try {
       parsed = await res.json()
-    } catch (err) {
-      throw new Error(`JSON parse failed: ${err}`)
+    } catch (parseErr) {
+      throw new Error(`JSON parse failed: ${parseErr}`)
     }
 
     if (!Array.isArray(parsed)) return ok(SOURCE, [], false)

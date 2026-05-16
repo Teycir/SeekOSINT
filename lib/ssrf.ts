@@ -221,8 +221,8 @@ export function validateSSRF(rawUrl: string, allowRdapDynamic = false, options?:
   let parsed: URL
   try {
     parsed = new URL(rawUrl)
-  } catch {
-    throw new SSRFError(rawUrl, 'unparseable URL')
+  } catch (err) {
+    throw new SSRFError(rawUrl, `unparseable URL: ${err}`)
   }
 
   // 1. Scheme must be https or http (http is permitted for APIs that don't

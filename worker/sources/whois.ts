@@ -30,29 +30,47 @@ function str(v: unknown): string | undefined {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalise(raw: any, domain: string): WhoisResult {
+  const registrar       = str(raw.registrar)
+  const registrarUrl    = str(raw.registrar_url)
+  const registrant      = str(raw.registrant_name)     ?? str(raw.registrant?.name)
+  const registrantOrg   = str(raw.registrant_org)      ?? str(raw.registrant?.organization)
+  const registrantEmail = str(raw.registrant_email)    ?? str(raw.registrant?.email)
+  const adminEmail      = str(raw.admin_email)         ?? str(raw.admin?.email)
+  const techEmail       = str(raw.tech_email)          ?? str(raw.tech?.email)
+  const abuseEmail      = str(raw.abuse_email)
+  const created         = str(raw.creation_date)       ?? str(raw.created)
+  const updated         = str(raw.updated_date)        ?? str(raw.updated)
+  const expires         = str(raw.expiration_date)     ?? str(raw.expires)
+  const dnssec          = str(raw.dnssec)
+  const rawText         = str(raw.raw_text)
+
+  const nameservers = Array.isArray(raw.name_servers)
+    ? (raw.name_servers as string[]).map(s => s.toLowerCase().trim()).filter(Boolean)
+    : undefined
+
+  const status = Array.isArray(raw.status)
+    ? (raw.status as string[]).map(s => String(s).trim()).filter(Boolean)
+    : str(raw.status)
+      ? [str(raw.status)!]
+      : undefined
+
   return {
-    domain:          str(raw.domain)              ?? domain,
-    registrar:       str(raw.registrar),
-    registrarUrl:    str(raw.registrar_url),
-    registrant:      str(raw.registrant_name)     ?? str(raw.registrant?.name),
-    registrantOrg:   str(raw.registrant_org)      ?? str(raw.registrant?.organization),
-    registrantEmail: str(raw.registrant_email)    ?? str(raw.registrant?.email),
-    adminEmail:      str(raw.admin_email)          ?? str(raw.admin?.email),
-    techEmail:       str(raw.tech_email)           ?? str(raw.tech?.email),
-    abuseEmail:      str(raw.abuse_email),
-    created:         str(raw.creation_date)        ?? str(raw.created),
-    updated:         str(raw.updated_date)         ?? str(raw.updated),
-    expires:         str(raw.expiration_date)      ?? str(raw.expires),
-    nameservers:     Array.isArray(raw.name_servers)
-                       ? (raw.name_servers as string[]).map(s => s.toLowerCase().trim()).filter(Boolean)
-                       : undefined,
-    dnssec:          str(raw.dnssec),
-    status:          Array.isArray(raw.status)
-                       ? (raw.status as string[]).map(s => String(s).trim()).filter(Boolean)
-                       : str(raw.status)
-                         ? [str(raw.status) as string]
-                         : undefined,
-    rawText:         str(raw.raw_text),
+    domain: str(raw.domain) ?? domain,
+    ...(registrar       && { registrar }),
+    ...(registrarUrl    && { registrarUrl }),
+    ...(registrant      && { registrant }),
+    ...(registrantOrg   && { registrantOrg }),
+    ...(registrantEmail && { registrantEmail }),
+    ...(adminEmail      && { adminEmail }),
+    ...(techEmail       && { techEmail }),
+    ...(abuseEmail      && { abuseEmail }),
+    ...(created         && { created }),
+    ...(updated         && { updated }),
+    ...(expires         && { expires }),
+    ...(nameservers && nameservers.length > 0 && { nameservers }),
+    ...(dnssec          && { dnssec }),
+    ...(status && status.length > 0 && { status }),
+    ...(rawText         && { rawText }),
   }
 }
 
@@ -87,8 +105,8 @@ export async function fetchWhois(
     let raw: any
     try {
       raw = await res.json()
-    } catch (e) {
-      throw new Error(`JSON parse failed: ${e}`)
+    } catch (parseErr) {
+      throw new Error(`JSON parse failed: ${parseErr}`)
     }
 
     if (!raw || typeof raw !== 'object') return skipped(SOURCE)

@@ -221,7 +221,9 @@ export async function getAllBreakerStatuses(
 
 /**
  * Call on a successful response from a source.
- * Clears the :open flag so a recovering source re-enters 'closed' state.
+ * Increments the request counter so the failure ratio denominator stays
+ * accurate, then clears the :open flag so a recovering source re-enters
+ * 'closed' state.
  *
  * Deliberately does NOT delete the window counters — wiping them on every
  * success would prevent the breaker from ever tripping on a source that
@@ -233,7 +235,14 @@ export async function recordBreakerSuccess(
   kv: KVNamespace,
 ): Promise<void> {
   try {
-    await kv.delete(openKey(source))
+    // Increment the request counter alongside every success so the
+    // failure-ratio denominator includes all outcomes (not just failures).
+    const raw  = await kv.get(reqKey(source), 'text')
+    const next = (raw ? parseInt(raw, 10) : 0) + 1
+    await Promise.all([
+      kv.put(reqKey(source), String(next), { expirationTtl: WINDOW_TTL_SECONDS }),
+      kv.delete(openKey(source)),
+    ])
   } catch (err) {
     console.error(`[ratelimit] recordBreakerSuccess failed for source=${sanitizeForLog(source)}:`, err)
   }
