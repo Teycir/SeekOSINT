@@ -1,6 +1,6 @@
 /**
  * Search landing page — single input, client-side validation, redirect on submit.
- * Turnstile invisible widget fires automatically; token is sent with the lookup.
+ * Turnstile widget fires automatically (appearance: 'execute'); token is sent with the lookup.
  */
 'use client'
 
@@ -68,7 +68,7 @@ export default function HomePage() {
       if (!containerRef.current || widgetId.current) return
       widgetId.current = window.turnstile!.render(containerRef.current, {
         sitekey: TURNSTILE_SITE_KEY,
-        appearance: 'invisible',
+        appearance: 'execute',
         callback: (token: string) => { tsToken.current = token },
         'expired-callback': () => { tsToken.current = null },
         'error-callback': () => { tsToken.current = null },
