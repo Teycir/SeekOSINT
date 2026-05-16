@@ -128,7 +128,6 @@ export const ALLOWED_HOSTS = new Set<string>([
   // Cloudflare DoH (used for domain → IP resolution)
   'cloudflare-dns.com',
 
-  // Cloudflare Turnstile verification
   'challenges.cloudflare.com',
 ])
 

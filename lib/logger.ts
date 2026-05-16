@@ -51,7 +51,7 @@ function emit(
 /**
  * An inbound provenance entry is emitted once per incoming API request.
  * It records who is calling, what they asked for, and whether the request
- * was allowed through (rate limit, Turnstile, concurrency, SSRF gate).
+ * was allowed through (rate limit, concurrency, SSRF gate).
  */
 export interface InboundProvenance {
   kind:          'inbound'
@@ -71,8 +71,6 @@ export interface InboundProvenance {
   endpoint:      string
   /** Whether the request was served from KV cache (no upstream fan-out). */
   fromCache:     boolean
-  /** Whether the Turnstile bot challenge passed. */
-  turnstilePassed?: boolean
   /** Rate-limit state at time of request. */
   rateLimitRemaining?: number
   /** Concurrency slot count at time of request. */

@@ -659,11 +659,10 @@ export default async function HostPage({
   searchParams,
 }: {
   params: Promise<{ query: string }>
-  searchParams: Promise<{ refresh?: string; ts?: string }>
+  searchParams: Promise<{ refresh?: string }>
 }) {
   const [{ query: rawQuery }, sp] = await Promise.all([params, searchParams])
   const forceRefresh = sp.refresh === '1'
-  const tsToken = sp.ts
   const outcome = await fetchResult(decodeURIComponent(rawQuery), forceRefresh)
 
   // ── Error screens ───────────────────────────────────────────────────────────
@@ -796,7 +795,6 @@ export default async function HostPage({
           cveIds={result.core.internetdb.data?.vulns ?? []}
           query={result.query.normalised}
           refresh={forceRefresh}
-          turnstileToken={tsToken}
         />
         <ThreatSection result={result} />
         <CertsSection result={result} />

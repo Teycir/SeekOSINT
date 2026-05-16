@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 export default async function SavedPage() {
   let targets: Awaited<ReturnType<typeof listTargets>> = []
   try {
-    const { env } = getCloudflareContext()
+    const { env } = await getCloudflareContext({ async: true })
     const db = (env as unknown as Env).DB
     if (db) targets = await listTargets(db)
   } catch (err) {

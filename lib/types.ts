@@ -349,7 +349,6 @@ export interface Env {
    * Slack incoming webhooks, Discord webhooks, and generic HTTP endpoints all work.
    */
   WEBHOOK_URL?: string
-  TURNSTILE_SECRET_KEY?: string
   // GHW_KEY_1 … GHW_KEY_18 — accessed dynamically via collectSecrets()
   [key: string]: unknown
 }

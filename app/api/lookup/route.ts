@@ -13,7 +13,6 @@ import { checkRateLimit, acquireConcurrency, releaseConcurrency } from '../../..
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
 import { recordSearch } from '../../../lib/searches'
-import { verifyTurnstileToken } from '../../../lib/turnstile'
 import { RATE_LIMIT } from '../../../lib/config'
 import { log, extractCallerIp } from '../../../lib/logger'
 import type { Env } from '../../../lib/types'
@@ -23,7 +22,6 @@ export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
   const qRaw    = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
-  const tsToken = searchParams.get('ts') // Turnstile token
 
   const { env, ctx } = getCloudflareContext()
   const typedEnv = env as unknown as Env
@@ -73,27 +71,6 @@ export async function GET(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
   }
 
-  // ── Turnstile verification (before parseQuery — prevents format-oracle leakage) ──
-  const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
-  if (!ts.success) {
-    log.provenance({
-      kind: 'inbound',
-      callerIp: ip,
-      ...(rayId && { rayId }),
-      ...(country && { country }),
-      query: q.slice(0, 100),
-      queryType: 'unknown',
-      method: req.method,
-      endpoint: '/api/lookup',
-      fromCache: false,
-      turnstilePassed: false,
-      outcome: 'bot_blocked',
-      statusCode: 403,
-      durationMs: Date.now() - started,
-    })
-    return errorResponse(ErrorCode.RATE_LIMITED, `bot challenge failed: ${ts.reason}`, 403)
-  }
-
   const query = parseQuery(q)
   if (!query) {
     log.provenance({
@@ -106,7 +83,6 @@ export async function GET(req: Request): Promise<Response> {
       method: req.method,
       endpoint: '/api/lookup',
       fromCache: false,
-      turnstilePassed: true,
       outcome: 'invalid_query',
       statusCode: 422,
       durationMs: Date.now() - started,
@@ -128,7 +104,6 @@ export async function GET(req: Request): Promise<Response> {
       method: req.method,
       endpoint: '/api/lookup',
       fromCache: false,
-      turnstilePassed: true,
       rateLimitRemaining: 0,
       outcome: 'rate_limited',
       statusCode: 429,
@@ -161,7 +136,6 @@ export async function GET(req: Request): Promise<Response> {
       method: req.method,
       endpoint: '/api/lookup',
       fromCache: false,
-      turnstilePassed: true,
       rateLimitRemaining: rl.remaining,
       concurrencyActive: cc.active,
       outcome: 'concurrency_limited',
@@ -195,7 +169,6 @@ export async function GET(req: Request): Promise<Response> {
       method: req.method,
       endpoint: '/api/lookup',
       fromCache: result.meta.cacheHits > 0,
-      turnstilePassed: true,
       rateLimitRemaining: rl.remaining,
       concurrencyActive: cc.active,
       outcome: 'allowed',
@@ -231,7 +204,6 @@ export async function GET(req: Request): Promise<Response> {
       method: req.method,
       endpoint: '/api/lookup',
       fromCache: false,
-      turnstilePassed: true,
       rateLimitRemaining: rl.remaining,
       outcome: 'error',
       statusCode: 500,
