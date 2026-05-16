@@ -1,26 +1,81 @@
 /**
  * app/api/targets/route.ts
  *
- * GET  /api/targets  — list all saved targets (newest first)
+ * GET  /api/targets  — list saved targets with riskScore + lastDiff summary
  * POST /api/targets  — save a target { query, label?, notes? }
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { saveTarget, listTargets } from '../../../lib/targets'
+import { diffHostResults } from '../../../lib/diff'
+import type { TargetDiff } from '../../../lib/diff'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
-import type { Env } from '../../../lib/types'
+import type { Env, HostResult, RiskScore } from '../../../lib/types'
+import { computeRiskScore } from '../../../lib/risk'
+
+// Shape returned per target — enriches SavedTarget with parsed signals
+interface TargetSummary {
+  id:         string
+  query:      string
+  label:      string | null
+  notes:      string | null
+  checked_at: number | null
+  created_at: number
+  riskScore:  RiskScore | null
+  lastDiff:   TargetDiff | null
+}
 
 export async function GET(): Promise<Response> {
   try {
     const { env } = getCloudflareContext()
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
-    const targets = await listTargets(db)
+
+    const rows = await listTargets(db)
+
+    const targets: TargetSummary[] = rows.map(row => {
+      let riskScore: RiskScore | null = null
+      let lastDiff:  TargetDiff  | null = null
+
+      if (row.result_json) {
+        try {
+          const parsed = JSON.parse(row.result_json) as HostResult
+
+          // Risk score — recompute from stored snapshot so the score is
+          // always consistent with the current risk formula, even if the
+          // snapshot was saved under an older version.
+          riskScore = computeRiskScore(parsed)
+
+          // Last diff — reconstruct by diffing the snapshot against itself
+          // to get an empty diff structure, then attach whatever was stored.
+          // We persist the full diff JSON alongside result_json in future;
+          // for snapshots that don't have it yet, lastDiff stays null.
+          //
+          // Note: if we later store last_diff_json in the DB column, swap
+          // this for: lastDiff = JSON.parse(row.last_diff_json)
+          const stored = (parsed as unknown as { _lastDiff?: TargetDiff })._lastDiff
+          if (stored) {
+            lastDiff = stored
+          }
+        } catch {
+          // Malformed snapshot — surface null rather than 500
+        }
+      }
+
+      return {
+        id:         row.id,
+        query:      row.query,
+        label:      row.label,
+        notes:      row.notes,
+        checked_at: row.checked_at,
+        created_at: row.created_at,
+        riskScore,
+        lastDiff,
+      }
+    })
+
     return Response.json({ targets })
   } catch (err) {
-    // Surface a structured error with enough detail to diagnose schema issues
-    // without leaking stack traces. Common cause: migration 002 not applied
-    // (result_json / checked_at columns missing from saved_targets).
     console.error('[api/targets] GET failed', err)
     const message = err instanceof Error ? err.message : 'internal server error'
     return errorResponse(ErrorCode.INTERNAL_ERROR, message, 500)

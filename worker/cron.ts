@@ -15,6 +15,8 @@ import { listTargets, updateTargetSnapshot } from '../lib/targets'
 import { runLookup } from './lookup'
 import { parseQuery } from '../lib/validate'
 import { safeJson } from '../lib/results'
+import { diffHostResults, summariseDiff } from '../lib/diff'
+import type { TargetDiff } from '../lib/diff'
 import type { Env, FeodoEntry, HostResult, SSLBLEntry } from '../lib/types'
 
 // ─── Blocklist refresh ────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ async function markRefreshed(db: D1Database, name: string): Promise<void> {
     .run()
 }
 
+
 async function refreshFeodo(db: D1Database): Promise<void> {
   if (!(await shouldRefresh(db, 'feodo'))) {
     console.log('[cron] feodo: fresh — skipping')
@@ -62,7 +65,6 @@ async function refreshFeodo(db: D1Database): Promise<void> {
     'feodo-blocklist',
   )
 
-  // Batch upserts — D1 batch() sends all statements in one HTTP round-trip
   const CHUNK = 100
   for (let i = 0; i < list.length; i += CHUNK) {
     const chunk = list.slice(i, i + CHUNK)
@@ -151,58 +153,15 @@ async function refreshBlocklists(db: D1Database): Promise<void> {
   ])
 }
 
-// ─── Change detection ─────────────────────────────────────────────────────────
+
+// ─── Typed change event (replaces the old string-based ChangeEvent) ───────────
 
 interface ChangeEvent {
   targetId:   string
   query:      string
   checkedAt:  number
-  changes:    string[]   // human-readable diff lines
-}
-
-function diffResults(prev: HostResult, next: HostResult): string[] {
-  const changes: string[] = []
-
-  // Ports
-  const prevPorts = new Set(prev.core.internetdb.data?.ports ?? [])
-  const nextPorts = new Set(next.core.internetdb.data?.ports ?? [])
-  const newPorts  = [...nextPorts].filter(p => !prevPorts.has(p))
-  const gонePorts = [...prevPorts].filter(p => !nextPorts.has(p))
-  if (newPorts.length)  changes.push(`new open ports: ${newPorts.join(', ')}`)
-  if (gонePorts.length) changes.push(`closed ports: ${gонePorts.join(', ')}`)
-
-  // CVEs
-  const prevCves = new Set(prev.vulns.map(v => v.data?.id).filter(Boolean))
-  const nextCves = new Set(next.vulns.map(v => v.data?.id).filter(Boolean))
-  const newCves  = [...nextCves].filter(c => !prevCves.has(c))
-  if (newCves.length) changes.push(`new CVEs: ${newCves.join(', ')}`)
-
-  // Threat intel
-  const prevUrlhaus  = prev.threat.urlhaus.data?.query_status  === 'is_host'
-  const nextUrlhaus  = next.threat.urlhaus.data?.query_status  === 'is_host'
-  if (!prevUrlhaus && nextUrlhaus) changes.push('now listed in URLhaus')
-
-  const prevFeodo = prev.threat.feodo.data !== null && prev.threat.feodo.status === 'ok'
-  const nextFeodo = next.threat.feodo.data !== null && next.threat.feodo.status === 'ok'
-  if (!prevFeodo && nextFeodo) changes.push('now listed in Feodo C2 tracker')
-
-  const prevTfCount = prev.threat.threatfox.data?.data?.length ?? 0
-  const nextTfCount = next.threat.threatfox.data?.data?.length ?? 0
-  if (nextTfCount > prevTfCount) changes.push(`ThreatFox IOC count increased: ${prevTfCount} → ${nextTfCount}`)
-
-  // ASN
-  if (prev.core.bgp.data?.asn && next.core.bgp.data?.asn &&
-      prev.core.bgp.data.asn !== next.core.bgp.data.asn) {
-    changes.push(`ASN changed: AS${prev.core.bgp.data.asn} → AS${next.core.bgp.data.asn}`)
-  }
-
-  // Country
-  if (prev.core.geo.data?.country && next.core.geo.data?.country &&
-      prev.core.geo.data.country !== next.core.geo.data.country) {
-    changes.push(`geo country changed: ${prev.core.geo.data.country} → ${next.core.geo.data.country}`)
-  }
-
-  return changes
+  summary:    string       // human-readable for logs / Slack relay
+  diff:       TargetDiff   // structured — consumers can branch on change types
 }
 
 // ─── Webhook dispatch ─────────────────────────────────────────────────────────
@@ -210,16 +169,14 @@ function diffResults(prev: HostResult, next: HostResult): string[] {
 /**
  * POST change events to WEBHOOK_URL.
  *
- * Payload shape (works with Slack, Discord, and generic HTTP endpoints):
+ * Generic payload shape — structured diff is included so consumers can
+ * branch on specific change types without parsing string lines.
  *
- *   Slack / Discord compatible:
- *     { text: "…", attachments: [{…}] }
+ *   { sentAt: number, events: ChangeEvent[] }
  *
- *   Generic:
- *     { events: ChangeEvent[], sentAt: number }
- *
- * We send the generic shape.  Slack / Discord users should set up a small
- * relay or use a workflow tool (Zapier, Make, n8n) to reformat it.
+ * Slack / Discord users should set up a small relay or use a workflow tool
+ * (Zapier, Make, n8n) to reformat; the `summary` field on each event
+ * contains the human-readable text for that purpose.
  *
  * Errors here are non-fatal — the snapshot is already persisted.
  */
@@ -294,17 +251,28 @@ export default {
         if (target.result_json) {
           try {
             const prevResult = JSON.parse(target.result_json) as HostResult
-            const changes    = diffResults(prevResult, nextResult)
-            if (changes.length > 0) {
+            const diff       = diffHostResults(prevResult, nextResult)
+
+            if (diff.hasChanges) {
               const event: ChangeEvent = {
-                targetId:  target.id,
-                query:     target.query,
-                checkedAt: Math.floor(Date.now() / 1000),
-                changes,
+                targetId: target.id,
+                query:    target.query,
+                checkedAt: diff.diffedAt,
+                summary:  summariseDiff(diff, target.query),
+                diff,
               }
               changeEvents.push(event)
-              // Structured log — can be picked up by Cloudflare Log Push / Workers Analytics
-              console.log('[cron] change detected', JSON.stringify(event))
+              // Structured log — can be picked up by Cloudflare Log Push
+              console.log('[cron] change detected', JSON.stringify({
+                targetId: target.id,
+                query:    target.query,
+                ports:    diff.ports.length,
+                cves:     diff.cves.length,
+                threats:  diff.threats.length,
+                geo:      diff.geo.length,
+                certExpiry: diff.certExpiry.length,
+                riskDelta:  diff.risk?.delta ?? null,
+              }))
             }
           } catch (parseErr) {
             console.warn(`[cron] could not parse stored snapshot for ${target.query}`, parseErr)
