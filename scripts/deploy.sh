@@ -17,7 +17,7 @@ cat > .open-next/_routes.json << 'EOF'
 {
   "version": 1,
   "include": ["/*"],
-  "exclude": ["/_next/static/*", "/publiceth.svg", "/schema.sql", "/BUILD_ID", "/_headers"]
+  "exclude": ["/_next/static/*", "/publiceth.svg", "/schema.sql", "/BUILD_ID"]
 }
 EOF
 

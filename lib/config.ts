@@ -69,11 +69,11 @@ export const CIRCUIT_BREAKER = {
   TRIP_RATIO: 0.95,
   /**
    * Minimum requests in a window before the breaker can trip.
-   * 50 means we need at least 50 requests in 5 minutes before even evaluating
-   * the ratio — this is a high-traffic guard that completely eliminates
-   * false trips from cold-start bursts or small test runs.
+   * 10 provides protection against cold-start bursts while still allowing
+   * the breaker to function on low-traffic sites. With TRIP_RATIO at 0.95,
+   * this means 10 of 10 requests must fail before the breaker opens.
    */
-  MIN_REQUESTS_TO_TRIP: 50,
+  MIN_REQUESTS_TO_TRIP: 10,
   /** KV key prefix for circuit-breaker state. */
   KV_PREFIX: 'cb:',
 } as const
