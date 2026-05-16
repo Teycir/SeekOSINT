@@ -23,6 +23,7 @@
 import type { CVEDetail, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 import { sleep } from '../../lib/backoff'
 import {
   getBreakerState,
@@ -108,7 +109,7 @@ async function fetchFromNVD(
   kv: KVNamespace,
 ): Promise<CVEDetail> {
   await acquireNVDSlot(kv)
-  const res = await fetch(
+  const res = await safeFetch(
     `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${cveId}&apiKey=${apiKey}`,
     { signal: AbortSignal.timeout(8000) },
   )
@@ -143,7 +144,7 @@ function parseCIRCL(cveId: string, json: any): CVEDetail {
 }
 
 async function fetchFromCIRCL(cveId: string): Promise<CVEDetail> {
-  const res = await fetch(
+  const res = await safeFetch(
     `https://cve.circl.lu/api/cve/${cveId}`,
     { signal: AbortSignal.timeout(8000) },
   )
@@ -170,7 +171,7 @@ export async function fetchOSV(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch(
+    const res = await safeFetch(
       `https://api.osv.dev/v1/vulns/${cveId}`,
       { signal: AbortSignal.timeout(8000) },
     )

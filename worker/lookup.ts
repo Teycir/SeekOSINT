@@ -34,6 +34,7 @@ import { KeyRing } from '../lib/keyring'
 import { mergeResults } from '../lib/merge'
 import { skipped, unwrap } from '../lib/results'
 import { collectSecrets } from '../lib/validate'
+import { safeFetch, validateSSRFResolved } from '../lib/ssrf'
 import {
   getBreakerState,
   getAllBreakerStatuses,
@@ -80,7 +81,7 @@ async function resolveDomainToIP(
   }
 
   try {
-    const res = await fetch(
+    const res = await safeFetch(
       `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=A`,
       {
         headers: { Accept: 'application/dns-json' },
@@ -90,9 +91,17 @@ async function resolveDomainToIP(
     if (!res.ok) return null
     const json = await res.json() as { Answer?: { type: number; data: string }[] }
     const ip = json.Answer?.find(r => r.type === 1)?.data ?? null
-    // Only cache successful resolutions — never cache null/failures so that
-    // a transient DNS timeout doesn't poison the cache for 5 minutes.
-    if (ip) await kv.put(cacheKey, ip, { expirationTtl: 300 })
+    
+    // DNS rebinding guard — validate the resolved IP before caching or using it
+    if (ip) {
+      try {
+        validateSSRFResolved(ip)
+      } catch (err) {
+        console.error('[lookup] DNS resolution blocked by SSRF guard:', domain, ip, err)
+        return null
+      }
+      await kv.put(cacheKey, ip, { expirationTtl: 300 })
+    }
     return ip
   } catch (err) {
     console.error('[lookup] DNS resolution failed for', domain, err)
@@ -295,8 +304,9 @@ export async function runLookup(
   // Only run the pre-flight when we have a resolved IP from a domain query
   // (ASN synthetic IPs and direct IP queries are never CDN-tagged meaningfully).
   if (query.type === 'domain' && ipQuery !== null) {
+    const resolvedIPQuery = ipQuery  // Capture for closure
     const preflight = await withBreaker(
-      'internetdb', env.KV, () => fetchInternetDB(ipQuery, env.KV),
+      'internetdb', env.KV, () => fetchInternetDB(resolvedIPQuery, env.KV),
     )
     internetdbPreflight = preflight
     if (preflight.status === 'ok' || preflight.status === 'cached') {
@@ -304,7 +314,7 @@ export async function runLookup(
       isCDNIP = tags.some(t => CDN_TAGS.has(t))
       if (isCDNIP) {
         console.log(
-          `[lookup] CDN IP detected for ${query.normalised} (${ipQuery.normalised}) — skipping IP-specific sources`,
+          `[lookup] CDN IP detected for ${query.normalised} (${resolvedIPQuery.normalised}) — skipping IP-specific sources`,
         )
       }
     }

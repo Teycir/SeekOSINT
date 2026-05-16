@@ -10,6 +10,7 @@
 import type { LookupQuery, SourceResult, WaybackResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'wayback'
 
@@ -32,7 +33,7 @@ export async function fetchWayback(
       collapse: 'urlkey',
     })
 
-    const res = await fetch(
+    const res = await safeFetch(
       `https://web.archive.org/cdx/search/cdx?${params}`,
       { signal: AbortSignal.timeout(8000) },
     )

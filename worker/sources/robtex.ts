@@ -10,6 +10,7 @@
 import type { LookupQuery, RobtexResult, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'robtex'
 const MAX_DNS_RECORDS = 100
@@ -25,7 +26,7 @@ export async function fetchRobtex(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch(
+    const res = await safeFetch(
       `https://freeapi.robtex.com/ipquery/${query.normalised}`,
       { signal: AbortSignal.timeout(8000) },
     )

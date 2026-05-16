@@ -15,11 +15,12 @@
 import type { LookupQuery, PassiveDNSRecord, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'passivedns'
 
 async function queryPDNS(target: string): Promise<PassiveDNSRecord[]> {
-  const res = await fetch(
+  const res = await safeFetch(
     `https://www.circl.lu/pdns/query/${target}`,
     { signal: AbortSignal.timeout(8000) },
   )

@@ -11,6 +11,7 @@
 import type { BucketResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 import type { KeyRing } from '../../lib/keyring'
 
 const SOURCE = 'ghw'
@@ -35,7 +36,7 @@ function mapProvider(type: string): 'aws' | 'azure' | 'gcp' {
 
 async function doFetch(domain: string, key: string): Promise<BucketResult[]> {
   const url = `https://buckets.grayhatwarfare.com/api/v2/buckets?keywords=${encodeURIComponent(domain)}&access_token=${key}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+  const res = await safeFetch(url, { signal: AbortSignal.timeout(8000) })
   if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status })
   const json = await res.json<GHWResponse>()
   return (json.buckets ?? []).map(b => ({

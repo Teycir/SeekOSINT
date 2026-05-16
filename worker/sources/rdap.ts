@@ -11,6 +11,7 @@
 import type { LookupQuery, RDAPContact, RDAPResult, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'rdap'
 
@@ -27,7 +28,7 @@ async function getRDAPBaseForDomain(
   let boot = await cacheGet<BootstrapEntry>(kv, CacheKey.rdapBootDNS())
   if (!boot) {
     try {
-      const res = await fetch('https://data.iana.org/rdap/dns.json', {
+      const res = await safeFetch('https://data.iana.org/rdap/dns.json', {
         signal: AbortSignal.timeout(8000),
       })
       if (!res.ok) return null
@@ -56,7 +57,7 @@ async function getRDAPBaseForIP(
   let boot = await cacheGet<BootstrapEntry>(kv, CacheKey.rdapBootIP())
   if (!boot) {
     try {
-      const res = await fetch('https://data.iana.org/rdap/ipv4.json', {
+      const res = await safeFetch('https://data.iana.org/rdap/ipv4.json', {
         signal: AbortSignal.timeout(8000),
       })
       if (res.ok) {
@@ -186,7 +187,11 @@ export async function fetchRDAP(
       url = `${base}domain/${query.normalised}`
     }
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    const res = await safeFetch(url, { 
+      signal: AbortSignal.timeout(8000) 
+    }, { 
+      allowRdapDynamic: true 
+    })
 
     if (!res.ok) {
       console.error(`[${SOURCE}] HTTP ${res.status} for ${query.normalised}`)

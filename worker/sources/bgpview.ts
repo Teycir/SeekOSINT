@@ -8,6 +8,7 @@
 import type { BGPViewResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'bgpview'
 
@@ -40,7 +41,7 @@ export async function fetchBGPView(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    const res = await safeFetch(url, { signal: AbortSignal.timeout(8000) })
 
     if (!res.ok) {
       console.error(`[${SOURCE}] HTTP ${res.status} for ${query.normalised}`)

@@ -12,6 +12,7 @@ import type { IPAPIResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
 import { withBackoff } from '../../lib/backoff'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'ipapi'
 
@@ -53,7 +54,7 @@ export async function fetchIPAPI(
 
   try {
     const res = await withBackoff(
-      () => fetch(
+      () => safeFetch(
         `https://ip-api.com/json/${query.normalised}?fields=66846719`,
         { signal: AbortSignal.timeout(8000) },
       ),

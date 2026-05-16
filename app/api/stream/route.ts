@@ -30,15 +30,39 @@ import { errorResponse, ErrorCode } from '../../../lib/errors'
 import { recordSearch } from '../../../lib/searches'
 import { verifyTurnstileToken } from '../../../lib/turnstile'
 import { RATE_LIMIT } from '../../../lib/config'
+import { log, extractCallerIp } from '../../../lib/logger'
 import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
+  const started = Date.now()
   const { searchParams } = new URL(req.url)
   const qRaw    = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
   const tsToken = searchParams.get('ts')
 
-  if (!qRaw) return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
+  const { env, ctx } = getCloudflareContext()
+  const typedEnv = env as unknown as Env
+  const ip = extractCallerIp(req)
+  const rayId = req.headers.get('CF-Ray') ?? undefined
+  const country = req.headers.get('CF-IPCountry') ?? undefined
+
+  if (!qRaw) {
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: '',
+      queryType: 'unknown',
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      outcome: 'invalid_query',
+      statusCode: 400,
+      durationMs: Date.now() - started,
+    })
+    return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
+  }
   
   // Sanitize query parameter
   const q = sanitizeQueryParam(qRaw, 500)
@@ -47,28 +71,82 @@ export async function GET(req: Request): Promise<Response> {
   const validation = validateQueryInput(q)
   if (!validation.valid) {
     console.warn('[api/stream] rejected query:', validation.reason, q.slice(0, 50))
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: q.slice(0, 100),
+      queryType: 'unknown',
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      outcome: 'invalid_query',
+      statusCode: 400,
+      durationMs: Date.now() - started,
+    })
     return errorResponse(ErrorCode.INVALID_QUERY, `invalid input: ${validation.reason}`, 400)
   }
-
-  const { env, ctx } = getCloudflareContext()
-  const typedEnv = env as unknown as Env
-
-  const ip =
-    req.headers.get('CF-Connecting-IP') ??
-    req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
-    'unknown'
 
   // ── Turnstile verification (before parseQuery — prevents format-oracle leakage) ──
   const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
   if (!ts.success) {
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: q.slice(0, 100),
+      queryType: 'unknown',
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      turnstilePassed: false,
+      outcome: 'bot_blocked',
+      statusCode: 403,
+      durationMs: Date.now() - started,
+    })
     return errorResponse(ErrorCode.RATE_LIMITED, `bot challenge failed: ${ts.reason}`, 403)
   }
 
   const query = parseQuery(q)
-  if (!query) return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query', 422)
+  if (!query) {
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: q.slice(0, 100),
+      queryType: 'unknown',
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      turnstilePassed: true,
+      outcome: 'invalid_query',
+      statusCode: 422,
+      durationMs: Date.now() - started,
+    })
+    return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query', 422)
+  }
 
   const rl = await checkRateLimit(ip, typedEnv.KV)
   if (!rl.allowed) {
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: query.normalised,
+      queryType: query.type,
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      turnstilePassed: true,
+      rateLimitRemaining: 0,
+      outcome: 'rate_limited',
+      statusCode: 429,
+      durationMs: Date.now() - started,
+    })
     return errorResponse(
       ErrorCode.RATE_LIMITED, 'rate limit exceeded', 429,
       { resetInSeconds: rl.resetInSeconds },
@@ -84,6 +162,23 @@ export async function GET(req: Request): Promise<Response> {
   // ── Global concurrency cap ──────────────────────────────────────────────────
   const cc = await acquireConcurrency(typedEnv.KV)
   if (!cc.allowed) {
+    log.provenance({
+      kind: 'inbound',
+      callerIp: ip,
+      ...(rayId && { rayId }),
+      ...(country && { country }),
+      query: query.normalised,
+      queryType: query.type,
+      method: req.method,
+      endpoint: '/api/stream',
+      fromCache: false,
+      turnstilePassed: true,
+      rateLimitRemaining: rl.remaining,
+      concurrencyActive: cc.active,
+      outcome: 'concurrency_limited',
+      statusCode: 429,
+      durationMs: Date.now() - started,
+    })
     return errorResponse(
       ErrorCode.RATE_LIMITED,
       'server busy — too many parallel lookups, please retry in a moment',
@@ -96,8 +191,6 @@ export async function GET(req: Request): Promise<Response> {
       },
     )
   }
-
-  const started = Date.now()
 
   // runLookup already handles all layers including batched CVEs.
   // We run it fully then stream the result split into two frames.
@@ -123,6 +216,24 @@ export async function GET(req: Request): Promise<Response> {
       try {
         const result = await runLookup({ ...query, forceRefresh: refresh }, typedEnv, ctx)
 
+        log.provenance({
+          kind: 'inbound',
+          callerIp: ip,
+          ...(rayId && { rayId }),
+          ...(country && { country }),
+          query: query.normalised,
+          queryType: query.type,
+          method: req.method,
+          endpoint: '/api/stream',
+          fromCache: result.meta.cacheHits > 0,
+          turnstilePassed: true,
+          rateLimitRemaining: rl.remaining,
+          concurrencyActive: cc.active,
+          outcome: 'allowed',
+          statusCode: 200,
+          durationMs: Date.now() - started,
+        })
+
         // Frame 1 — everything except vulns
         const { vulns, ...partial } = result
         await writeLine({ type: 'partial', data: partial })
@@ -146,6 +257,22 @@ export async function GET(req: Request): Promise<Response> {
         }
       } catch (err) {
         console.error('[api/stream] runLookup failed', err)
+        log.provenance({
+          kind: 'inbound',
+          callerIp: ip,
+          ...(rayId && { rayId }),
+          ...(country && { country }),
+          query: query.normalised,
+          queryType: query.type,
+          method: req.method,
+          endpoint: '/api/stream',
+          fromCache: false,
+          turnstilePassed: true,
+          rateLimitRemaining: rl.remaining,
+          outcome: 'error',
+          statusCode: 500,
+          durationMs: Date.now() - started,
+        })
         await writeLine({ type: 'error', data: { code: 'INTERNAL_ERROR', message: 'lookup failed' } })
       } finally {
         await writer.close()

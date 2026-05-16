@@ -8,6 +8,7 @@
 import type { InternetDBResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'internetdb'
 
@@ -32,7 +33,7 @@ export async function fetchInternetDB(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch(
+    const res = await safeFetch(
       `https://internetdb.shodan.io/${query.normalised}`,
       { signal: AbortSignal.timeout(8000) },
     )

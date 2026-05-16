@@ -20,6 +20,7 @@ import type {
 } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped, safeJson } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 // ─── Shared POST helper ───────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ async function abusePost<T>(
   apiKey: string,
 ): Promise<T> {
   const params = new URLSearchParams({ ...body, 'Auth-Key': apiKey })
-  const res = await fetch(url, {
+  const res = await safeFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),

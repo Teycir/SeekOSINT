@@ -18,6 +18,7 @@
 import type { CertRecord, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped } from '../../lib/results'
+import { safeFetch } from '../../lib/ssrf'
 
 const SOURCE = 'crtsh'
 const MAX_RESULTS = 500
@@ -38,7 +39,7 @@ interface RawCert {
  * Throws only on genuine network errors or non-recoverable HTTP failures.
  */
 async function fetchCerts(url: string): Promise<RawCert[]> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000) })
+  const res = await safeFetch(url, { signal: AbortSignal.timeout(20000) })
 
   // 429 = rate limited — treat as empty, not an error (avoids tripping breaker)
   if (res.status === 429) {
