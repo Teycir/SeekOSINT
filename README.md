@@ -20,7 +20,7 @@ _Scan the QR code or copy the wallet address above._
 
 # SeekOSINT
 
-> **Unified host intelligence across 17 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
+> **Unified host intelligence across 15 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
 **Live at:** https://seekosint.pages.dev
 
@@ -35,7 +35,7 @@ $ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
     "bgp":         { "status": "ok",     "data": { "name": "CLOUDFLARENET", "rir": "ARIN" } },
     ...
   },
-  "meta": { "durationMs": 312, "cacheHits": 4, "sourcesQueried": 12, "sourcesFailed": 0 }
+  "meta": { "durationMs": 312, "cacheHits": 4, "sourcesQueried": 15, "sourcesFailed": 0 }
 }
 ```
 
@@ -65,7 +65,8 @@ $ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
   - [D1 persistence](#d1-persistence)
     - [Schema (`schema.sql`)](#schema-schemasql)
     - [Apply schema](#apply-schema)
-    - [Helper functions (`lib/searches.ts`)](#helper-functions-libsearchests)
+    - [Helper functions](#helper-functions)
+  - [Cron worker](#cron-worker)
   - [Development setup](#development-setup)
     - [Prerequisites](#prerequisites)
     - [Local development](#local-development)
@@ -130,9 +131,11 @@ Browser / curl
 │                                     │
 │  app/page.tsx          search form  │
 │  app/host/[query]/page.tsx          │
-│    └─ fetches /api/lookup?q=…       │
+│    └─ streams /api/stream?q=…       │
 │  app/api/recent/route.ts            │
 │    └─ recent searches for homepage  │
+│  app/api/targets/route.ts           │
+│    └─ saved targets CRUD            │
 └──────────────┬──────────────────────┘
                │
                ▼
@@ -148,29 +151,38 @@ Browser / curl
 ┌─────────────────────────────────────┐
 │  worker/lookup.ts  — orchestrator   │
 │  4-layer Promise.allSettled         │
-└──┬─────────────────────────────────┘
+└──┬──────────────────────────────────┘
    │
-   ├─► Layer 1 (parallel): InternetDB · IPinfo · BGPView · RDAP
-   ├─► Layer 2 (parallel): crt.sh · PassiveDNS · Robtex
-   │                        URLhaus · ThreatFox · MalwareBazaar · Feodo · SSLBL
-   ├─► Layer 3 (after L1): NVD + CIRCL CVE enrichment (only if vulns found)
-   └─► Layer 4 (parallel): GrayHatWarfare · Wayback
+   ├─► Layer 1+2 (parallel, 12 sources):
+   │     InternetDB · IPinfo · BGPView · RDAP · crt.sh · PassiveDNS · Robtex
+   │     URLhaus · ThreatFox · MalwareBazaar · Feodo · SSLBL
+   ├─► Layer 3 (after L1): NVD CVE enrichment (only if vulns found, batched 10-at-a-time)
+   └─► Layer 4 (parallel): GrayHatWarfare · Wayback (domain queries only)
                │
                ▼
 ┌──────────────┐   ┌──────────────────┐
 │ KV           │   │ D1               │
-│ response     │   │ search history   │
-│ cache (24h)  │   │ recent queries   │
+│ response     │   │ searches         │
+│ cache (TTL   │   │ saved_targets    │
+│ per source)  │   │                  │
 └──────────────┘   └──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  seekosint-cron (Worker)            │
+│  wrangler.cron.toml                 │
+│  • hourly blocklist refresh         │
+│  • daily saved-target re-query      │
+└─────────────────────────────────────┘
 ```
 
 ---
 
 ## Execution model
 
-Layers 1 and 2 fire simultaneously in a single `Promise.allSettled` batch. Layers 3 and 4 start after Layer 1 settles because they depend on its output — CVE IDs from InternetDB drive Layer 3; query type determines Layer 4 relevance. Total wall-clock time ≈ max(Layer 1+2) + max(Layer 3+4).
+Layers 1 and 2 fire simultaneously (12 sources in one `Promise.allSettled`). Layer 3 starts after Layer 1 settles — CVE IDs from InternetDB drive NVD enrichment, batched 10-at-a-time to avoid stampeding the API. Layer 4 fires in parallel with Layer 3 but only for domain queries; IP/ASN skip it entirely. Total wall-clock time ≈ max(Layer 1+2) + max(Layer 3+4).
 
-Force-refresh any query with `?refresh=1` to bypass the KV cache entirely and pull live data from every upstream.
+Force-refresh any query with `?refresh=1` to bypass the KV cache and pull live data from every upstream.
 
 ---
 
@@ -190,12 +202,11 @@ Force-refresh any query with `?refresh=1` to bypass the KV cache entirely and pu
 | 2 | MalwareBazaar | Malware sample metadata | `ABUSECH_KEY` |
 | 2 | Feodo Tracker | Botnet C2 IPs | No (bulk download) |
 | 2 | SSLBL | Malicious SSL certificates | No (bulk download) |
-| 3 | NVD | CVE details, CVSS v2/v3 scores | `NVD_KEY` (optional) |
-| 3 | CIRCL | CVE enrichment fallback | No |
+| 3 | NVD + CIRCL | CVE details, CVSS v2/v3 scores | `NVD_KEY` (optional) |
 | 4 | GrayHatWarfare | Exposed S3/Azure/GCS buckets | `GRAYHATWARFARE_API_KEY_1..18` |
 | 4 | Wayback | Historical CDX snapshots | No |
 
-**Feodo and SSLBL** are fetched as bulk blocklists and cached in KV — no per-query upstream call.
+**Feodo and SSLBL** are fetched as bulk blocklists and refreshed hourly by the cron worker — no per-query upstream call.
 
 ---
 
@@ -207,19 +218,35 @@ SeekOSINT/
 │   ├── page.tsx                      # Homepage — search form + recent searches
 │   ├── layout.tsx                    # Root layout
 │   ├── globals.css
+│   ├── about/                        # About page
+│   ├── faq/                          # FAQ page
 │   ├── host/[query]/
-│   │   └── page.tsx                  # SSR host report page
+│   │   └── page.tsx                  # SSR host report page (streams via /api/stream)
 │   ├── api/
 │   │   ├── lookup/route.ts           # GET /api/lookup?q=&refresh=1
-│   │   ├── recent/route.ts           # GET /api/recent?limit=10
+│   │   ├── stream/route.ts           # GET /api/stream?q= (SSE streaming)
+│   │   ├── recent/route.ts           # GET /api/recent?limit=5
+│   │   ├── batch/route.ts            # POST /api/batch (multi-query)
+│   │   ├── targets/route.ts          # GET/POST /api/targets
+│   │   ├── targets/[id]/route.ts     # DELETE /api/targets/:id
 │   │   └── admin/reset-breaker/      # POST — manual circuit-breaker reset
 │   └── components/
-│       ├── ExportButton.tsx          # ↓ export json (client, zero backend)
-│       ├── RecentSearches.tsx        # Recent queries from D1 (client)
+│       ├── AnimatedTagline.tsx
+│       ├── Card.tsx
+│       ├── CopyButton.tsx
+│       ├── CveDrawer.tsx
 │       ├── DecryptedText.tsx
-│       └── AnimatedTagline.tsx
+│       ├── ExportButton.tsx          # JSON export (client, zero backend)
+│       ├── Footer.tsx
+│       ├── RecentSearches.tsx        # Recent queries from D1 (client)
+│       ├── SaveButton.tsx            # Save/unsave target
+│       ├── ScrollProgress.tsx
+│       ├── ShareButton.tsx
+│       ├── VulnsStream.tsx           # Streaming CVE results
+│       └── ui/                       # Shared UI primitives
 ├── worker/
 │   ├── lookup.ts                     # 4-layer orchestrator
+│   ├── cron.ts                       # Hourly blocklist refresh + daily target sweep
 │   ├── index.ts
 │   └── sources/
 │       ├── internetdb.ts
@@ -230,7 +257,8 @@ SeekOSINT/
 │       ├── passivedns.ts
 │       ├── robtex.ts
 │       ├── abusech.ts                # URLhaus + ThreatFox + MalwareBazaar
-│       ├── nvd.ts                    # NVD CVE enrichment
+│       ├── nvd.ts                    # NVD + CIRCL CVE enrichment
+│       ├── osv.ts                    # OSV.dev re-export (via nvd.ts)
 │       ├── grayhatwarfare.ts
 │       └── wayback.ts
 ├── lib/
@@ -238,13 +266,16 @@ SeekOSINT/
 │   ├── cache.ts                      # KV cache wrapper (bypass on forceRefresh)
 │   ├── config.ts                     # All magic numbers: TTLs, timeouts, limits
 │   ├── errors.ts                     # Unified error format + ErrorCode enum
-│   ├── searches.ts                   # D1 helpers: recordSearch, getRecentSearches
-│   ├── ratelimit.ts                  # KV-based per-IP rate limiter
+│   ├── hooks.ts                      # Shared React hooks
 │   ├── keyring.ts                    # GHW 18-key rotation
-│   ├── backoff.ts                    # Exponential backoff
 │   ├── logger.ts                     # Structured logging
 │   ├── merge.ts                      # Result merging
+│   ├── ratelimit.ts                  # KV-based per-IP rate limiter + circuit breakers
 │   ├── results.ts                    # SourceResult helpers
+│   ├── searches.ts                   # D1 helpers: recordSearch, getRecentSearches
+│   ├── targets.ts                    # D1 helpers: saveTarget, listTargets, removeTarget
+│   ├── textAnimation.ts              # Text animation utility
+│   ├── useHostStream.ts              # SSE streaming hook for host results
 │   ├── validate.ts                   # Query parsing (IPv4/v6/domain/ASN)
 │   └── utils.ts
 ├── test/
@@ -260,10 +291,10 @@ SeekOSINT/
 │   ├── Spec.md
 │   └── LICENSE.md
 ├── public/
-│   ├── publiceth.svg                 # Donation QR code
-│   └── schema.sql                    # D1 schema (for reference)
+│   └── publiceth.svg                 # Donation QR code
 ├── schema.sql                        # D1 schema (apply with wrangler d1 execute)
-├── wrangler.toml
+├── wrangler.toml                     # Pages build config (KV + D1 bindings)
+├── wrangler.cron.toml                # Cron worker config (separate deploy)
 ├── next.config.ts
 ├── open-next.config.ts
 └── vitest.config.ts
@@ -277,16 +308,16 @@ SeekOSINT/
 Workers runtime via `@opennextjs/cloudflare` — no `runtime = 'edge'` export needed. Pure Web APIs throughout. Cold starts under 50 ms globally.
 
 ### Layered parallel execution
-Layers 1+2 fire together. Layer 3 (CVE enrichment) only runs if InternetDB finds vulns. Layer 4 runs in parallel with Layer 3. Total time ≈ slowest source in each wave, not the sum of all sources.
+Layers 1+2 fire together (12 sources). Layer 3 (CVE enrichment) only runs if InternetDB finds vulns, batched 10-at-a-time. Layer 4 (GHW + Wayback) runs in parallel with Layer 3, but is skipped entirely for IP/ASN queries. Total time ≈ slowest source in each wave, not the sum of all sources.
 
 ### Graceful degradation
 Every source is wrapped in a circuit breaker + try/catch. A failed source becomes an `{ status: 'error' }` badge. The page always renders.
 
 ### Aggressive KV caching
-Each source has its own 24-hour TTL cache keyed by `source:normalised_query`. Cache hits bypass external calls entirely. `?refresh=1` threads `forceRefresh: true` through every fetcher to bypass cache on demand.
+Each source has its own TTL (30 days for CVEs, 24h for BGP/RDAP, 1h for core geo/ports, 30m for abuse.ch). Cache hits bypass external calls entirely. `?refresh=1` threads `forceRefresh: true` through every fetcher to bypass cache on demand.
 
 ### Free-tier optimization
-GrayHatWarfare has 18-key rotation (1,800 req/day). NVD uses request batching. Feodo/SSLBL are downloaded as bulk lists and cached, not queried per-IP.
+GrayHatWarfare has 18-key rotation (1,800 req/day). NVD uses request batching (10 concurrent max). Feodo/SSLBL are fetched as bulk lists by the cron worker and cached in KV — zero per-query upstream cost.
 
 ### Fire-and-forget D1 writes
 `recordSearch()` is called inside `ctx.waitUntil()` — it does not add any latency to the API response. D1 writes happen after the response is flushed.
@@ -307,13 +338,26 @@ export async function cacheSet<T>(
   kv: KVNamespace,
   key: string,
   value: T,
-  ttlSeconds?: number,     // default: CONFIG.CACHE_TTL_DEFAULT (86400)
+  ttlSeconds?: number,
 ): Promise<void>
 ```
 
 Cache keys follow the pattern `source:normalised_query` — e.g. `internetdb:1.1.1.1`, `crtsh:example.com`.
 
-Errors are never cached — a failed fetch will always retry on the next request.
+TTLs by source (from `lib/config.ts`):
+
+| Source(s) | TTL |
+|---|---|
+| CVE (NVD/CIRCL) | 30 days |
+| Wayback | 7 days |
+| BGP, RDAP, Robtex | 24 hours |
+| crt.sh, PassiveDNS | 12 hours |
+| GrayHatWarfare | 6 hours |
+| InternetDB, IPinfo | 1 hour |
+| Feodo, SSLBL (bulk) | 1 hour |
+| URLhaus, ThreatFox, MalwareBazaar | 30 minutes |
+
+Errors are never cached — a failed fetch always retries on the next request.
 
 ---
 
@@ -335,7 +379,7 @@ On exhaustion, the API returns `429` with `Retry-After`.
 
 ## Circuit breakers
 
-Each source has a circuit breaker tracked in KV. If a source exceeds **50% failure rate** in a 5-minute window, the breaker opens and the source is skipped (returns `{ status: 'skipped' }`) for **15 minutes**, then auto-recovers.
+Each source has a circuit breaker tracked in KV. If a source exceeds **50% failure rate** in a 5-minute window (minimum 4 requests), the breaker opens and the source is skipped (returns `{ status: 'skipped' }`) for **15 minutes**, then auto-recovers.
 
 The current state of every breaker is included in `meta.circuitBreakers` on every API response.
 
@@ -355,7 +399,7 @@ curl -X POST https://seekosint.pages.dev/api/admin/reset-breaker \
 GrayHatWarfare allows 100 requests/day per API key. SeekOSINT rotates across up to 18 keys for an effective 1,800 requests/day:
 
 ```typescript
-// lib/keyring.ts — picks a key with remaining quota, round-robin
+// lib/keyring.ts — round-robin across keys with remaining quota
 const key = await keyRing.next(env, 'GRAYHATWARFARE_API_KEY')
 ```
 
@@ -381,12 +425,17 @@ CREATE INDEX IF NOT EXISTS idx_searches_query
   ON searches (query, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS saved_targets (
-  id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  query      TEXT NOT NULL UNIQUE,
-  label      TEXT,
-  notes      TEXT,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  query       TEXT NOT NULL UNIQUE,
+  label       TEXT,
+  notes       TEXT,
+  result_json TEXT,       -- snapshot of last cron lookup
+  checked_at  INTEGER,    -- unix seconds — when cron last re-queried
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+CREATE INDEX IF NOT EXISTS idx_saved_targets_created
+  ON saved_targets (created_at DESC);
 ```
 
 ### Apply schema
@@ -395,18 +444,61 @@ CREATE TABLE IF NOT EXISTS saved_targets (
 wrangler d1 execute seek-osint --file=schema.sql
 ```
 
-### Helper functions (`lib/searches.ts`)
+### Helper functions
 
+**`lib/searches.ts`** — search history:
 ```typescript
 // Write a search row (fire-and-forget safe)
 await recordSearch(db, query, queryType, resultJson, durationMs)
 
-// Read last N distinct queries for the homepage
-const recent = await getRecentSearches(db, 10)
+// Read last N distinct queries for the homepage (default 5)
+const recent = await getRecentSearches(db, 5)
 // → [{ query: '1.1.1.1', query_type: 'ip', created_at: 1716912000 }, ...]
 ```
 
+**`lib/targets.ts`** — saved targets:
+```typescript
+// Upsert a target (idempotent on query)
+const id = await saveTarget(db, query, label, notes)
+
+// List all saved targets
+const targets = await listTargets(db)
+
+// Remove by id
+await removeTarget(db, id)
+
+// Fetch one (used by cron before re-querying)
+const target = await getTarget(db, id)
+
+// Write latest snapshot after cron re-query
+await updateTargetSnapshot(db, id, resultJson)
+```
+
 ---
+
+## Cron worker
+
+A standalone Worker (`worker/cron.ts`) is deployed separately via `wrangler.cron.toml`. It runs on an **hourly trigger** and performs two jobs:
+
+1. **Blocklist refresh** — checks if Feodo/SSLBL bulk lists are stale in KV and re-downloads them if needed.
+2. **Saved-target sweep** — re-queries every saved target and writes the fresh snapshot back to D1 (`checked_at`, `result_json`).
+
+Deploy the cron worker:
+
+```bash
+wrangler deploy --config wrangler.cron.toml
+```
+
+Secrets for the cron worker are set separately:
+
+```bash
+wrangler secret put NVD_KEY     --config wrangler.cron.toml
+wrangler secret put ABUSECH_KEY --config wrangler.cron.toml
+wrangler secret put WEBHOOK_URL --config wrangler.cron.toml  # optional change notifications
+```
+
+---
+
 ## Development setup
 
 ### Prerequisites
@@ -451,12 +543,17 @@ wrangler d1 execute seek-osint --file=schema.sql
 ### Build and deploy
 
 ```bash
-# Build with OpenNext for Cloudflare Pages
-npm run build          # next build + opennextjs-cloudflare
-npm run deploy         # wrangler pages deploy .open-next
+# Build + deploy to Cloudflare Pages
+bash scripts/deploy.sh
 ```
 
-Or push to `main` — Cloudflare Pages auto-builds on every push if connected.
+The script runs `opennextjs-cloudflare build`, prepares the Pages output directory, and calls `wrangler pages deploy .open-next`. Do **not** use `npm run deploy` or bare `wrangler deploy` — those target the Workers (non-Pages) runtime and will fail.
+
+To deploy the cron worker separately:
+
+```bash
+wrangler deploy --config wrangler.cron.toml
+```
 
 ### Wrangler configuration (`wrangler.toml`)
 
@@ -485,7 +582,7 @@ All secrets are stored as Wrangler secrets — never in source code or `.env`.
 ### Required secrets
 
 ```bash
-wrangler secret put NVD_KEY             # NVD API key (optional but higher rate limits)
+wrangler secret put NVD_KEY             # NVD API key (optional — higher rate limits)
 wrangler secret put ABUSECH_KEY         # abuse.ch API key (URLhaus/ThreatFox/MalwareBazaar)
 wrangler secret put ADMIN_TOKEN         # Bearer token for /api/admin/* endpoints
 
@@ -517,14 +614,11 @@ npm test
 # Watch mode
 npm run test:watch
 
-# Coverage report
-npm run test:coverage
-
 # Specific file
 npm test -- test/cache.test.ts
 ```
 
-Tests use Vitest + Miniflare for Worker environment simulation. See `vitest.config.ts`.
+Tests use Vitest. See `vitest.config.ts`.
 
 ---
 
@@ -534,14 +628,14 @@ Tests use Vitest + Miniflare for Worker environment simulation. See `vitest.conf
 |---|---|---|
 | Pages builds | 500/month | ~10 deploys/month |
 | Workers requests | 100k/day | ~5k lookups/day |
-| KV reads | 100k/day | ~40k reads/day (8 sources × 5k) |
+| KV reads | 100k/day | ~75k reads/day (15 sources × 5k) |
 | KV writes | 1k/day | ~500 writes/day |
 | D1 reads | 5M rows/day | ~5k rows/day |
 | D1 writes | 100k rows/day | ~500 rows/day |
 
 **Estimated capacity:** ~5,000 unique lookups/day comfortably within free tier.
 
-High-traffic mitigation: caching means most lookups consume 0 upstream calls and very few KV writes. Popular queries are nearly free after the first hit.
+Caching means most lookups consume 0 upstream calls and very few KV writes. Popular queries are nearly free after the first hit.
 
 ---
 
@@ -554,15 +648,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased roadmap.
 - ✅ Unified error format (`lib/errors.ts`, `ErrorCode` enum)
 - ✅ Centralised config (`lib/config.ts` — all TTLs, timeouts, limits)
 - ✅ Circuit breakers per source with `/api/admin/reset-breaker`
-- ✅ `?refresh=1` force-cache-bypass threads through all 11 fetchers
-- ✅ JSON export button (client-side, zero backend work)
-- ✅ Recent searches on homepage (D1, deduped, fire-and-forget write)
+- ✅ `?refresh=1` force-cache-bypass threads through all fetchers
+- ✅ JSON export button (client-side, zero backend)
+- ✅ Recent searches on homepage (D1, deduped, capped at 5)
+- ✅ Saved targets (D1 CRUD, `/api/targets`)
+- ✅ SSE streaming results (`/api/stream`, `useHostStream`)
+- ✅ Batch CVE enrichment (10 concurrent, `lib/config.ts CVE.MAX_CONCURRENT`)
+- ✅ Cron worker — hourly blocklist refresh + daily target re-query
 
 **Up next:**
-- [ ] `wrangler secret put` for all remaining secrets
-- [ ] BFG to scrub `.env` from git history
-- [ ] Batch CVE enrichment (max 10 concurrent)
 - [ ] Multi-query batch lookup (paste list of IPs)
+- [ ] Change notifications via webhook on target re-query diff
+- [ ] BFG to scrub `.env` from git history if needed
 
 ---
 
@@ -601,6 +698,7 @@ GitHub: [@Teycir](https://github.com/Teycir)
 - [abuse.ch](https://abuse.ch) — URLhaus, ThreatFox, MalwareBazaar, Feodo, SSLBL
 - [NVD](https://nvd.nist.gov) (NIST)
 - [CIRCL](https://www.circl.lu/services/cve-search/)
+- [OSV.dev](https://osv.dev)
 - [GrayHatWarfare](https://grayhatwarfare.com)
 - [Internet Archive](https://web.archive.org) (Wayback Machine)
 
