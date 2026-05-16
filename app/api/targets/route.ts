@@ -1,18 +1,31 @@
 /**
  * app/api/targets/route.ts
  *
- * GET  /api/targets  — list saved targets with riskScore + lastDiff summary
- * POST /api/targets  — save a target { query, label?, notes? }
+ * GET    /api/targets  — list saved targets with riskScore + lastDiff summary
+ * POST   /api/targets  — save a target { query, label?, notes? }
+ *                        auto-prunes oldest entries when count > TARGETS_SOFT_CAP
+ * DELETE /api/targets  — purge ALL saved targets
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { sanitizeLabel, sanitizeNotes, validateQueryInput, validateInput } from '../../../lib/sanitize'
-import { saveTarget, listTargets } from '../../../lib/targets'
+import { saveTarget, listTargets, purgeAllTargets, countTargets, purgeOldestTargets } from '../../../lib/targets'
 import { diffHostResults } from '../../../lib/diff'
 import type { TargetDiff } from '../../../lib/diff'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
 import type { Env, HostResult, RiskScore } from '../../../lib/types'
 import { computeRiskScore } from '../../../lib/risk'
+
+/**
+ * Soft cap on saved targets per user (browser-local, single-tenant deployment).
+ * When POST would push the count above this, the oldest entries are pruned
+ * automatically so the list never balloons unboundedly.
+ *
+ * Warn threshold  — shown in the UI as a yellow banner (TARGETS_WARN_THRESHOLD)
+ * Hard prune at   — TARGETS_SOFT_CAP; oldest entries are culled to keep it at cap
+ */
+export const TARGETS_SOFT_CAP       = 100
+export const TARGETS_WARN_THRESHOLD = 75
 
 // Shape returned per target — enriches SavedTarget with parsed signals
 interface TargetSummary {
@@ -76,7 +89,15 @@ export async function GET(): Promise<Response> {
       }
     })
 
-    return Response.json({ targets })
+    return Response.json({
+      targets,
+      meta: {
+        count:         targets.length,
+        softCap:       TARGETS_SOFT_CAP,
+        warnThreshold: TARGETS_WARN_THRESHOLD,
+        nearingCap:    targets.length >= TARGETS_WARN_THRESHOLD,
+      },
+    })
   } catch (err) {
     console.error('[api/targets] GET failed', err)
     const message = err instanceof Error ? err.message : 'internal server error'
@@ -117,10 +138,38 @@ export async function POST(req: Request): Promise<Response> {
     const db = (env as unknown as Env).DB
     if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
 
+    // ── Auto-prune: keep the list at or below the soft cap ─────────────────
+    // Count BEFORE saving (the new row hasn't been inserted yet).
+    // If we're already at the cap, prune the oldest to make room.
+    let prunedIds: string[] = []
+    const currentCount = await countTargets(db)
+    if (currentCount >= TARGETS_SOFT_CAP) {
+      // Prune enough to drop to cap - 1, then the new save brings it back to cap.
+      const excess = currentCount - TARGETS_SOFT_CAP + 1
+      prunedIds = await purgeOldestTargets(db, excess)
+    }
+
     const id = await saveTarget(db, parsed.normalised, label, notes)
-    return Response.json({ id, query: parsed.normalised }, { status: 201 })
+    return Response.json(
+      { id, query: parsed.normalised, prunedIds },
+      { status: 201 },
+    )
   } catch (err) {
     console.error('[api/targets] POST failed', err)
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'internal server error', 500)
+  }
+}
+
+export async function DELETE(): Promise<Response> {
+  try {
+    const { env } = getCloudflareContext()
+    const db = (env as unknown as Env).DB
+    if (!db) return errorResponse(ErrorCode.INTERNAL_ERROR, 'D1 not available', 503)
+
+    const deleted = await purgeAllTargets(db)
+    return Response.json({ deleted })
+  } catch (err) {
+    console.error('[api/targets] DELETE failed', err)
     return errorResponse(ErrorCode.INTERNAL_ERROR, 'internal server error', 500)
   }
 }

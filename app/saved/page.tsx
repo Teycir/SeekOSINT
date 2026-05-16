@@ -37,6 +37,11 @@ export default async function SavedPage() {
             <h1 className="font-mono text-xl font-semibold text-white">Saved targets</h1>
             <p className="text-xs text-neutral-500 mt-1">
               {targets.length} {targets.length === 1 ? 'target' : 'targets'} watched
+              {targets.length >= 75 && (
+                <span className={targets.length >= 100 ? ' text-red-400' : ' text-amber-500'}>
+                  {' '}· {targets.length >= 100 ? 'cap reached' : 'nearing cap'}
+                </span>
+              )}
             </p>
           </div>
           <a

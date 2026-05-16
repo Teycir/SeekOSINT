@@ -1,11 +1,14 @@
 /**
  * lib/targets.ts — D1 helpers for the `saved_targets` table.
  *
- * saveTarget    — upsert a target (UNIQUE on query, so re-saving is idempotent)
- * listTargets   — return all saved targets ordered by recency
- * removeTarget  — delete by id
- * getTarget     — fetch one by id (used by cron before re-querying)
- * updateTargetSnapshot — write the latest result_json + bumped checked_at
+ * saveTarget            — upsert a target (UNIQUE on query, so re-saving is idempotent)
+ * listTargets           — return all saved targets ordered by recency
+ * removeTarget          — delete by id
+ * purgeAllTargets       — delete every saved target
+ * purgeOldestTargets    — delete the N oldest targets (auto-prune)
+ * countTargets          — return total row count (cheap)
+ * getTarget             — fetch one by id (used by cron before re-querying)
+ * updateTargetSnapshot  — write the latest result_json + bumped checked_at
  */
 import type { D1Database } from '@cloudflare/workers-types'
 
@@ -120,4 +123,56 @@ export async function updateTargetSnapshot(
     )
     .bind(resultJson, id)
     .run()
+}
+
+/**
+ * Delete every saved target. Returns the number of rows deleted.
+ */
+export async function purgeAllTargets(db: D1Database): Promise<number> {
+  const { meta } = await db
+    .prepare(`DELETE FROM saved_targets`)
+    .run()
+  return meta.changes ?? 0
+}
+
+/**
+ * Return the total number of saved targets (cheap COUNT query).
+ */
+export async function countTargets(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) as n FROM saved_targets`)
+    .first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+/**
+ * Delete the `count` oldest targets (by created_at ASC).
+ * Used for automatic pruning when the list exceeds the soft cap.
+ * Returns the ids that were removed.
+ */
+export async function purgeOldestTargets(
+  db:    D1Database,
+  count: number,
+): Promise<string[]> {
+  if (count <= 0) return []
+  // Fetch the ids to delete first so we can return them for optimistic UI updates.
+  const { results } = await db
+    .prepare(
+      `SELECT id FROM saved_targets ORDER BY created_at ASC LIMIT ?`,
+    )
+    .bind(count)
+    .all<{ id: string }>()
+
+  const ids = (results ?? []).map(r => r.id)
+  if (ids.length === 0) return []
+
+  // D1 doesn't support DELETE … IN (?) with array binding natively,
+  // so build placeholders dynamically (safe — values are UUIDs from DB).
+  const placeholders = ids.map(() => '?').join(', ')
+  await db
+    .prepare(`DELETE FROM saved_targets WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .run()
+
+  return ids
 }
