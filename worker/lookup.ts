@@ -76,7 +76,7 @@ async function resolveDomainToIP(
 
   if (!forceRefresh) {
     const cached = await kv.get(cacheKey)
-    if (cached) return cached === 'null' ? null : cached
+    if (cached) return cached  // only successful IPs are ever cached (see below)
   }
 
   try {
@@ -90,8 +90,9 @@ async function resolveDomainToIP(
     if (!res.ok) return null
     const json = await res.json() as { Answer?: { type: number; data: string }[] }
     const ip = json.Answer?.find(r => r.type === 1)?.data ?? null
-    // Cache for 5 minutes
-    await kv.put(cacheKey, ip ?? 'null', { expirationTtl: 300 })
+    // Only cache successful resolutions — never cache null/failures so that
+    // a transient DNS timeout doesn't poison the cache for 5 minutes.
+    if (ip) await kv.put(cacheKey, ip, { expirationTtl: 300 })
     return ip
   } catch (err) {
     console.error('[lookup] DNS resolution failed for', domain, err)
