@@ -19,7 +19,7 @@ const BASE_META = {
   sourcesQueried: 0, sourcesFailed: 0, circuitBreakers: [],
 }
 
-const BASE_RISK = { score: 0, severity: 'LOW' as const, breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, total: 0 } }
+const BASE_RISK = { score: 0, severity: 'LOW' as const, breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, domainRegistration: 0, total: 0 } }
 
 function base(overrides: Partial<HostResult> = {}): HostResult {
   return {
@@ -290,7 +290,7 @@ describe('diffHostResults', () => {
     // The diff function recalculates risk from next.data, so we need to provide
     // actual data that will produce a higher score than prev
     const prev = base({ 
-      riskScore: { score: 20, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, total: 20 } },
+      riskScore: { score: 20, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, domainRegistration: 0, total: 20 } },
       core: { ...base().core, internetdb: idb([80]) }  // 1 port = low score
     })
     const next = base({ 
@@ -317,12 +317,12 @@ describe('diffHostResults', () => {
     // Test that small risk deltas (< 5 points) don't trigger hasChanges
     // when there are no other changes
     const prev = base({ 
-      riskScore: { score: 10, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, total: 10 } },
+      riskScore: { score: 10, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, domainRegistration: 0, total: 10 } },
       core: { ...base().core, internetdb: idb([80]) }
     })
     // Next has slightly different data but should produce similar risk score
     const next = base({ 
-      riskScore: { score: 12, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, total: 12 } },
+      riskScore: { score: 12, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, domainRegistration: 0, total: 12 } },
       core: { ...base().core, internetdb: idb([80]) }  // Same port
     })
     const d = diffHostResults(prev, next)
@@ -381,7 +381,7 @@ describe('diffHostResults', () => {
     })
 
     it('includes risk score when delta ≥ 5', () => {
-      const prev = base({ riskScore: { score: 10, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, total: 10 } } })
+      const prev = base({ riskScore: { score: 10, severity: 'LOW', breakdown: { blocklists: 0, threatIntel: 0, vulns: 0, ports: 0, networkFlags: 0, domainRegistration: 0, total: 10 } } })
       const next = base({ vulns: [cveResult('CVE-X', 10.0, 'CRITICAL')] })
       const d = diffHostResults(prev, next)
       if (d.risk && Math.abs(d.risk.delta) >= 5) {

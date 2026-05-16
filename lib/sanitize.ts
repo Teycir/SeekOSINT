@@ -275,7 +275,9 @@ export function sanitizeURL(input: string, allowedProtocols = ['http:', 'https:'
     url.password = ''
     
     return url.toString()
-  } catch {
+  } catch (err) {
+    // URL constructor throws on invalid input — expected, not loggable
+    void err
     return null
   }
 }

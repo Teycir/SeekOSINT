@@ -23,19 +23,21 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  blocklists:   'Blocklists',
-  threatIntel:  'Threat intel',
-  vulns:        'Vulnerabilities',
-  ports:        'Port exposure',
-  networkFlags: 'Network flags',
+  blocklists:         'Blocklists',
+  threatIntel:        'Threat intel',
+  vulns:              'Vulnerabilities',
+  ports:              'Port exposure',
+  networkFlags:       'Network flags',
+  domainRegistration: 'Domain registration',
 }
 
 const CATEGORY_MAX: Record<string, number> = {
-  blocklists:   35,
-  threatIntel:  30,
-  vulns:        25,
-  ports:        15,
-  networkFlags: 10,
+  blocklists:         35,
+  threatIntel:        30,
+  vulns:              25,
+  ports:              15,
+  networkFlags:       10,
+  domainRegistration: 15,
 }
 
 export function RiskBadge({ risk }: { risk: RiskScore }) {
