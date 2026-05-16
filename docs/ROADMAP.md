@@ -24,6 +24,14 @@
 | Saved targets — `POST/GET /api/targets`, `DELETE /api/targets/:id` | — |
 | `SaveButton` component wired into results page header | — |
 | Daily cron scaffold — `worker/cron.ts` + `wrangler.cron.toml` | — |
+| **UX: Look up button loading spinner** — `isSearching` state blocks double-submit | — |
+| **UX: Recent searches loading state** — per-item spinner on click, all items disabled | — |
+| **UX: Card chevron rotation** — SVG chevron animates 180° on collapse via `.chevron` CSS class | — |
+| **UX: RiskBadge click-to-toggle** — breakdown tooltip works on mobile (click) + desktop (hover) | — |
+| **UX: Dynamic page title** — `generateMetadata` sets `<title>` to the queried host | — |
+| **UX: MetaBar failure highlight** — `sourcesFailed > 0` renders in amber | — |
+| **UX: RefreshButton with spinner** — `↺ refresh` shows loading state instead of plain link | — |
+| **UX: `/` keyboard shortcut** — focuses search input from anywhere on the homepage | — |
 
 ---
 

@@ -84,3 +84,11 @@ body::before {
   z-index: 100;
   box-shadow: 0 0 10px rgba(255, 26, 26, 0.8), 0 0 20px rgba(255, 26, 26, 0.4);
 }
+
+/* Card chevron rotation */
+details > summary .chevron {
+  transition: transform 0.2s ease;
+}
+details[open] > summary .chevron {
+  transform: rotate(180deg);
+}

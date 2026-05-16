@@ -45,7 +45,9 @@ function PulsingCard({ count }: { count: number }) {
             loading CVE details…
           </span>
         </span>
-        <span className="text-neutral-600 text-xs">▾</span>
+        <svg className="chevron w-4 h-4 text-neutral-600 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="4,6 8,10 12,6" />
+        </svg>
       </summary>
       <div className="border-t border-neutral-800 px-5 py-4 space-y-2">
         {Array.from({ length: Math.min(count, 5) }).map((_, i) => (
@@ -117,7 +119,9 @@ export function VulnsStream({ cveIds, query, refresh = false, turnstileToken }: 
         <summary className="cursor-pointer select-none px-5 py-4 text-sm font-semibold
                             text-neutral-200 list-none flex items-center justify-between">
           Vulnerabilities ({cveIds.length})
-          <span className="text-neutral-600 text-xs">▾</span>
+          <svg className="chevron w-4 h-4 text-neutral-600 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="4,6 8,10 12,6" />
+          </svg>
         </summary>
         <div className="border-t border-neutral-800 px-5 py-4">
           <p className="text-xs text-neutral-600 italic">CVE details unavailable — check NVD directly</p>
@@ -146,7 +150,9 @@ export function VulnsStream({ cveIds, query, refresh = false, turnstileToken }: 
                           text-neutral-200 hover:text-white list-none flex items-center
                           justify-between">
         Vulnerabilities ({vulns.length})
-        <span className="text-neutral-600 text-xs">▾</span>
+        <svg className="chevron w-4 h-4 text-neutral-600 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="4,6 8,10 12,6" />
+        </svg>
       </summary>
       <div className="border-t border-neutral-800 px-5 py-4 text-sm text-neutral-300">
         <CveDrawerList vulns={vulns} />

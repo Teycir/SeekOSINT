@@ -3,7 +3,9 @@
 /**
  * RiskBadge — displays the host risk score with colour coding and a
  * tooltip breakdown of contributing categories.
+ * Hover to open on desktop; click to toggle on mobile.
  */
+import { useState } from 'react'
 import type { RiskScore } from '../../lib/types'
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -40,26 +42,31 @@ export function RiskBadge({ risk }: { risk: RiskScore }) {
   const { score, severity, breakdown } = risk
   const badgeStyle = SEVERITY_STYLES[severity] ?? SEVERITY_STYLES.LOW
   const dotStyle   = SEVERITY_DOT[severity]   ?? SEVERITY_DOT.LOW
+  const [open, setOpen] = useState(false)
 
   return (
     <div className="group relative inline-block">
       {/* Badge */}
       <span
+        onClick={() => setOpen(o => !o)}
         className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1
-                    text-xs font-semibold font-mono cursor-default select-none
+                    text-xs font-semibold font-mono cursor-pointer select-none
                     ${badgeStyle}`}
         title="Click to see score breakdown"
+        role="button"
+        aria-expanded={open}
       >
         <span className={`w-1.5 h-1.5 rounded-full ${dotStyle}`} />
         Risk {score} · {severity}
       </span>
 
-      {/* Tooltip breakdown — shown on hover */}
+      {/* Tooltip breakdown — hover on desktop, click-toggle on all */}
       <div
-        className="absolute right-0 top-full mt-2 z-50 w-56 rounded-lg border
+        className={`absolute right-0 top-full mt-2 z-50 w-56 rounded-lg border
                    border-neutral-700 bg-neutral-900 p-3 shadow-xl
-                   opacity-0 pointer-events-none group-hover:opacity-100
-                   group-hover:pointer-events-auto transition-opacity duration-150"
+                   transition-opacity duration-150
+                   ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
+                   group-hover:opacity-100 group-hover:pointer-events-auto`}
       >
         <p className="text-xs font-semibold text-neutral-300 mb-2">Score breakdown</p>
         <div className="space-y-1.5">

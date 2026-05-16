@@ -16,6 +16,23 @@ import { ShareButton } from '../../components/ShareButton'
 import { SaveButton } from '../../components/SaveButton'
 import { VulnsStream } from '../../components/VulnsStream'
 import { RiskBadge } from '../../components/RiskBadge'
+import { RefreshButton } from '../../components/RefreshButton'
+import type { Metadata } from 'next'
+
+// ─── Dynamic metadata ─────────────────────────────────────────────────────────
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ query: string }>
+}): Promise<Metadata> {
+  const { query } = await params
+  const decoded = decodeURIComponent(query)
+  return {
+    title: `${decoded} — seekosint`,
+    description: `Host intelligence report for ${decoded}`,
+  }
+}
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -68,7 +85,9 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
                           text-neutral-200 hover:text-white list-none flex items-center
                           justify-between">
         {title}
-        <span className="text-neutral-600 text-xs">▾</span>
+        <svg className="chevron w-4 h-4 text-neutral-600 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="4,6 8,10 12,6" />
+        </svg>
       </summary>
       <div className="border-t border-neutral-800 px-5 py-4 text-sm text-neutral-300">
         {children}
@@ -412,7 +431,11 @@ function MetaBar({ result }: { result: HostResult }) {
   const { meta } = result
   return (
     <p className="text-xs text-neutral-600 text-right font-mono">
-      {meta.sourcesQueried} sources · {meta.cacheHits} cached · {meta.sourcesFailed} failed · {meta.durationMs}ms
+      {meta.sourcesQueried} sources · {meta.cacheHits} cached ·{' '}
+      <span className={meta.sourcesFailed > 0 ? 'text-amber-500' : ''}>
+        {meta.sourcesFailed} failed
+      </span>
+      {' '}· {meta.durationMs}ms
     </p>
   )
 }
@@ -458,13 +481,7 @@ export default async function HostPage({
               resultJson={JSON.stringify(result, null, 2)}
               filename={`seekosint-${result.query.normalised}.json`}
             />
-            <a
-              href={`/host/${encodeURIComponent(result.query.normalised)}?refresh=1`}
-              className="text-xs text-neutral-500 hover:text-neon-red font-mono transition-colors"
-              title="Bypass cache and re-fetch all sources"
-            >
-              ↺ refresh
-            </a>
+            <RefreshButton query={result.query.normalised} />
             <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">
               ← back
             </a>

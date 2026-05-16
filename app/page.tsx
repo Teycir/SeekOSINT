@@ -30,6 +30,21 @@ export default function HomePage() {
   const router = useRouter()
   const [input, setInput] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Global `/` shortcut — focus the search input (skip if already focused or typing elsewhere)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== '/') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return
+      e.preventDefault()
+      inputRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
   const tsToken = useRef<string | null>(null)
   const widgetId = useRef<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -80,6 +95,7 @@ export default function HomePage() {
     }
 
     setValidationError(null)
+    setIsSearching(true)
 
     // Append token if available; server skips check when TURNSTILE_SECRET_KEY is unset
     const token = tsToken.current
@@ -123,14 +139,16 @@ export default function HomePage() {
         {/* Form */}
         <div className="space-y-3">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={e => {
               setInput((e.target as HTMLInputElement).value)
               setValidationError(null)
             }}
-            onKeyDown={e => e.key === 'Enter' && handleSubmit(e as unknown as FormEvent)}
+            onKeyDown={e => e.key === 'Enter' && !isSearching && handleSubmit(e as unknown as FormEvent)}
             placeholder="8.8.8.8  ·  example.com  ·  AS15169"
+            disabled={isSearching}
             className={`w-full rounded-lg border-2 bg-black/50 px-4 py-3 font-mono text-neon-red
                         placeholder-neon-red/20 outline-none transition-all
                         focus:border-neon-red focus:shadow-[0_0_15px_rgba(255,26,26,0.3)]
@@ -148,6 +166,12 @@ export default function HomePage() {
             <p className="text-sm text-red-400 font-mono">{validationError}</p>
           )}
 
+          {!validationError && !isSearching && (
+            <p className="text-[10px] text-neon-red/20 font-mono text-right select-none">
+              press <kbd className="rounded border border-neon-red/20 px-1 py-0.5">/</kbd> to focus
+            </p>
+          )}
+
           <button
             onClick={handleSubmit}
             className="w-full rounded-lg border-2 border-neon-red/50 bg-transparent px-4 py-3
@@ -155,9 +179,18 @@ export default function HomePage() {
                        transition-all duration-300
                        hover:border-neon-red hover:bg-neon-red/5 hover:text-neon-red
                        hover:shadow-[0_0_20px_rgba(255,26,26,0.2)]
-                       active:scale-[0.98]"
+                       active:scale-[0.98]
+                       disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSearching}
           >
-            Look up
+            {isSearching ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neon-red/30 border-t-neon-red" />
+                Searching…
+              </span>
+            ) : (
+              'Look up'
+            )}
           </button>
         </div>
 
