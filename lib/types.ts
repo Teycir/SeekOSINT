@@ -234,6 +234,11 @@ export interface CircuitBreakerMeta {
   opensUntil:     number
 }
 
+// ─── Normalised threat indicators ─────────────────────────────────────────────
+// Re-exported from lib/normalize.ts so consumers import from a single place.
+
+export type { ThreatIndicator, ThreatFeed } from './normalize'
+
 // ─── Merged output ─────────────────────────────────────────────────────────────
 
 export interface HostResult {
@@ -260,6 +265,14 @@ export interface HostResult {
     feodo:         SourceResult<FeodoEntry | null>
     sslbl:         SourceResult<SSLBLEntry[]>
   }
+
+  /**
+   * Deduplicated, cross-feed threat indicators derived from all Layer 2
+   * sources. Computed by normalizeThreatIndicators() in merge.ts.
+   * This is the canonical view consumers should render — the raw
+   * per-source threat data is still present in `threat` for debugging.
+   */
+  normalizedThreats: import('./normalize').ThreatIndicator[]
 
   // Layer 3 — only populated if internetdb.vulns is non-empty
   vulns: SourceResult<CVEDetail>[]

@@ -246,58 +246,108 @@ function DNSSection({ result }: { result: HostResult }) {
 }
 
 function ThreatSection({ result }: { result: HostResult }) {
-  const { urlhaus, threatfox, feodo } = result.threat
-  const hasThreats =
-    (sourceOk(urlhaus) && urlhaus.data.query_status === 'is_host') ||
-    (sourceOk(threatfox) && threatfox.data.query_status === 'ok' && (threatfox.data.data?.length ?? 0) > 0) ||
-    (sourceOk(feodo) && feodo.data !== null)
+  const indicators = result.normalizedThreats
+  const hasThreats = indicators.length > 0
+
+  const feedLabel: Record<string, string> = {
+    urlhaus:       'URLhaus',
+    threatfox:     'ThreatFox',
+    feodo:         'Feodo',
+    sslbl:         'SSLBL',
+    malwarebazaar: 'MalwareBazaar',
+  }
+
+  const confidenceVariant = (c: number): 'danger' | 'warn' | 'ok' | 'muted' => {
+    if (c >= 85) return 'danger'
+    if (c >= 65) return 'warn'
+    if (c >= 40) return 'ok'
+    return 'muted'
+  }
+
   return (
-    <Card title={`Threat intelligence${hasThreats ? ' ⚠' : ''}`}>
-      <div className="space-y-4">
-        {sourceOk(urlhaus) && urlhaus.data.query_status === 'is_host' ? (
-          <div>
-            <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">URLhaus</p>
-            <Badge label={`${urlhaus.data.urls_count ?? 0} URLs found`} variant="danger" />
-            {urlhaus.data.urlhaus_reference && (
-              <a
-                href={urlhaus.data.urlhaus_reference}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-2 text-xs text-neon-red/60 hover:text-neon-red font-mono"
-              >
-                view ↗
-              </a>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-neutral-600">URLhaus — no results</p>
-        )}
-        {sourceOk(threatfox) && threatfox.data.query_status === 'ok' && (threatfox.data.data?.length ?? 0) > 0 ? (
-          <div>
-            <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">ThreatFox IOCs</p>
-            <div className="space-y-1">
-              {threatfox.data.data!.slice(0, 5).map(ioc => (
-                <div key={ioc.id} className="flex items-center gap-2 text-xs text-neutral-400">
-                  <span className="inline-flex items-center gap-1 font-mono">
-                    {ioc.ioc}<CopyButton value={ioc.ioc} label="Copy IOC" />
-                  </span>
-                  <span className="text-neutral-600">·</span>
-                  <span>{ioc.malware} — {ioc.threat_type}</span>
-                  <Badge label={`${ioc.confidence_level}%`} variant="warn" />
+    <Card title={`Threat intelligence${hasThreats ? ` ⚠ (${indicators.length})` : ''}`}>
+      {!hasThreats ? (
+        <p className="text-xs text-neutral-600">No threat indicators found across all feeds.</p>
+      ) : (
+        <div className="space-y-3">
+          {indicators.map((ind, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-3 space-y-2"
+            >
+              {/* IOC + confidence */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="font-mono text-sm text-neutral-100 break-all">{ind.ioc}</span>
+                  <CopyButton value={ind.ioc} label="Copy IOC" />
                 </div>
+                <Badge label={`${ind.confidence}%`} variant={confidenceVariant(ind.confidence)} />
+              </div>
+
+              {/* Type + threat */}
+              <div className="flex flex-wrap gap-2 text-xs text-neutral-400">
+                <span className="uppercase tracking-wide text-neutral-600">{ind.iocType}</span>
+                <span className="text-neutral-700">·</span>
+                <span>{ind.threatType.replace(/_/g, ' ')}</span>
+                {ind.malwareFamilies.length > 0 && (
+                  <>
+                    <span className="text-neutral-700">·</span>
+                    <span className="text-amber-400">{ind.malwareFamilies.join(', ')}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Provenance badges */}
+              <div className="flex flex-wrap gap-1">
+                {ind.provenance.map(feed => (
+                  <span
+                    key={feed}
+                    className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400
+                               font-mono"
+                  >
+                    {feedLabel[feed] ?? feed}
+                  </span>
+                ))}
+              </div>
+
+              {/* Tags */}
+              {ind.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {ind.tags.map(t => (
+                    <span key={t} className="rounded bg-neutral-800/60 px-2 py-0.5 text-xs
+                                             text-neutral-500">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Timestamps */}
+              {(ind.firstSeen || ind.lastSeen) && (
+                <p className="text-xs text-neutral-600 font-mono">
+                  {ind.firstSeen && <>first {ind.firstSeen.slice(0, 10)}</>}
+                  {ind.firstSeen && ind.lastSeen && ' → '}
+                  {ind.lastSeen && <>last {ind.lastSeen.slice(0, 10)}</>}
+                </p>
+              )}
+
+              {/* Reference links */}
+              {Object.entries(ind.references).map(([feed, url]) => (
+                <a
+                  key={feed}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-xs text-neutral-600 hover:text-neon-red
+                             font-mono transition-colors mr-3"
+                >
+                  {feedLabel[feed] ?? feed} ↗
+                </a>
               ))}
             </div>
-          </div>
-        ) : (
-          <p className="text-xs text-neutral-600">ThreatFox — no IOCs</p>
-        )}
-        {sourceOk(feodo) && feodo.data !== null && (
-          <div>
-            <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Feodo C2</p>
-            <Badge label={`${feodo.data.malware} — ${feodo.data.status}`} variant="danger" />
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

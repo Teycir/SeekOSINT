@@ -30,6 +30,7 @@ import type {
   WaybackResult,
 } from './types'
 import { unwrapSettled } from './results'
+import { normalizeThreatIndicators } from './normalize'
 
 interface MergeInput {
   query: LookupQuery
@@ -147,6 +148,13 @@ export function mergeResults(input: MergeInput): HostResult {
     ...(resolvedDomain !== undefined && { resolvedDomain }),
     core,
     threat,
+    normalizedThreats: normalizeThreatIndicators({
+      urlhaus:       threat.urlhaus,
+      threatfox:     threat.threatfox,
+      feodo:         threat.feodo,
+      sslbl:         threat.sslbl,
+      malwarebazaar: threat.malwarebazaar,
+    }),
     vulns,
     recon,
     meta: {
