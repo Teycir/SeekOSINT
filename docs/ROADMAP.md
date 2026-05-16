@@ -39,10 +39,8 @@
 ## 🟡 Performance — one live problem, two quick wins
 
 ### NVD latency (live problem)
-A host with many CVEs blocks the entire response waiting for NVD's rate limit. Users see a spinner for 30–120 seconds.
-
-- [ ] Stream Layer 1+2 results immediately — render ports, geo, threats within ~500ms. CVEs load in after. `ReadableStream` + chunked JSON on the client, no queue needed.
-- [ ] Batch CVE requests 5 at a time instead of sequentially — cuts enrichment time by 4× for CVE-heavy hosts.
+- [x] Batch CVE requests 5 at a time — `fetchCVEsBatched()` in `worker/lookup.ts` cuts enrichment time ~5× for CVE-heavy hosts.
+- [x] Stream Layer 1+2 results immediately — `VulnsStream` client component fetches via `GET /api/stream` (NDJSON); geo/ports/threats/certs SSR in <1s, CVE card shows pulsing skeleton then patches in when NVD responds. `lib/useHostStream.ts` for reuse.
 
 ### Blocklists (quick win)
 - [ ] Move Feodo and SSLBL into D1 tables with an index on IP/SHA1 — replace the current in-memory linear scan with a single indexed `SELECT`. One migration script.

@@ -61,5 +61,5 @@ export function errorResponse(
   const body: ErrorBody = { error: message, code }
   if (details !== undefined) body.details = details
 
-  return Response.json(body, { status, headers })
+  return Response.json(body, { status, ...(headers && { headers }) })
 }

@@ -43,27 +43,45 @@ $ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
 
 ## Table of Contents
 
-- [What SeekOSINT does](#what-seekosint-does)
-- [Use cases](#use-cases)
-- [Architecture overview](#architecture-overview)
-- [Execution model](#execution-model)
-- [Data sources](#data-sources)
-- [Project structure](#project-structure)
-- [Key design decisions](#key-design-decisions)
-- [Caching strategy](#caching-strategy)
-- [Rate limiting](#rate-limiting)
-- [Circuit breakers](#circuit-breakers)
-- [Key rotation — GrayHatWarfare](#key-rotation--grayhatwarfare)
-- [D1 persistence](#d1-persistence)
-- [Development setup](#development-setup)
-- [Deployment](#deployment)
-- [Secrets and environment variables](#secrets-and-environment-variables)
-- [Running tests](#running-tests)
-- [Cloudflare free-tier limits](#cloudflare-free-tier-limits)
-- [Roadmap](#roadmap)
-- [License](#license)
-- [Author](#author)
-- [Acknowledgments](#acknowledgments)
+- [SeekOSINT](#seekosint)
+  - [Table of Contents](#table-of-contents)
+  - [What SeekOSINT does](#what-seekosint-does)
+  - [Use cases](#use-cases)
+  - [Architecture overview](#architecture-overview)
+  - [Execution model](#execution-model)
+  - [Data sources](#data-sources)
+  - [Project structure](#project-structure)
+  - [Key design decisions](#key-design-decisions)
+    - [Edge-first, no Node.js](#edge-first-no-nodejs)
+    - [Layered parallel execution](#layered-parallel-execution)
+    - [Graceful degradation](#graceful-degradation)
+    - [Aggressive KV caching](#aggressive-kv-caching)
+    - [Free-tier optimization](#free-tier-optimization)
+    - [Fire-and-forget D1 writes](#fire-and-forget-d1-writes)
+  - [Caching strategy](#caching-strategy)
+  - [Rate limiting](#rate-limiting)
+  - [Circuit breakers](#circuit-breakers)
+  - [Key rotation — GrayHatWarfare](#key-rotation--grayhatwarfare)
+  - [D1 persistence](#d1-persistence)
+    - [Schema (`schema.sql`)](#schema-schemasql)
+    - [Apply schema](#apply-schema)
+    - [Helper functions (`lib/searches.ts`)](#helper-functions-libsearchests)
+  - [Development setup](#development-setup)
+    - [Prerequisites](#prerequisites)
+    - [Local development](#local-development)
+    - [Create Cloudflare resources (first time)](#create-cloudflare-resources-first-time)
+  - [Deployment](#deployment)
+    - [Build and deploy](#build-and-deploy)
+    - [Wrangler configuration (`wrangler.toml`)](#wrangler-configuration-wranglertoml)
+  - [Secrets and environment variables](#secrets-and-environment-variables)
+    - [Required secrets](#required-secrets)
+    - [`.env.example` (local dev only)](#envexample-local-dev-only)
+  - [Running tests](#running-tests)
+  - [Cloudflare free-tier limits](#cloudflare-free-tier-limits)
+  - [Roadmap](#roadmap)
+  - [License](#license)
+  - [Author](#author)
+  - [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -552,7 +570,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased roadmap.
 
 **Business Source License 1.1 (BSL)**
 
-Copyright © 2025 Teycir Ben Soltane <teycir@pxdmail.net>
+Copyright © 2026 Teycir Ben Soltane <teycir@pxdmail.net>
 
 Permitted: personal use, research, education, non-commercial projects, internal business tools.  
 Restricted: commercial SaaS offerings, reselling as a service, competitive products.

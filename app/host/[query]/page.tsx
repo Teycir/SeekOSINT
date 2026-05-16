@@ -14,7 +14,7 @@ import { ExportButton } from '../../components/ExportButton'
 import { CopyButton } from '../../components/CopyButton'
 import { ShareButton } from '../../components/ShareButton'
 import { SaveButton } from '../../components/SaveButton'
-import { CveDrawerList } from '../../components/CveDrawer'
+import { VulnsStream } from '../../components/VulnsStream'
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -179,19 +179,6 @@ function PortsSection({ result }: { result: HostResult }) {
           ))}
         </div>
       )}
-    </Card>
-  )
-}
-
-function VulnsSection({ result }: { result: HostResult }) {
-  if (result.vulns.length === 0) return null
-  const okVulns = result.vulns
-    .filter(v => (v.status === 'ok' || v.status === 'cached') && v.data !== null)
-    .map(v => v.data!)
-  if (okVulns.length === 0) return null
-  return (
-    <Card title={`Vulnerabilities (${okVulns.length})`}>
-      <CveDrawerList vulns={okVulns} />
     </Card>
   )
 }
@@ -431,7 +418,13 @@ export default async function HostPage({
 
         <OverviewSection result={result} />
         <PortsSection result={result} />
-        <VulnsSection result={result} />
+        {/* VulnsStream fetches CVE details client-side so NVD latency doesn't
+            block the initial paint — geo/ports/threats all SSR above this. */}
+        <VulnsStream
+          cveIds={result.core.internetdb.data?.vulns ?? []}
+          query={result.query.normalised}
+          refresh={forceRefresh}
+        />
         <ThreatSection result={result} />
         <CertsSection result={result} />
         <DNSSection result={result} />

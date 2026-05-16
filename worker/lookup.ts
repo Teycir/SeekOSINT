@@ -94,7 +94,34 @@ async function withBreaker<T>(
   return result
 }
 
-// ─── D1 persistence ───────────────────────────────────────────────────────────
+// ─── CVE batch helper ─────────────────────────────────────────────────────────
+
+/**
+ * Fetch CVE details in batches of CVE_CONFIG.MAX_CONCURRENT (default 5).
+ * Sequential batches prevent stampeding NVD's rate limit while still being
+ * ~5× faster than fully sequential lookups on CVE-heavy hosts.
+ */
+async function fetchCVEsBatched(
+  cveIds: string[],
+  kv: KVNamespace,
+  nvdKey: string,
+  forceRefresh: boolean,
+): Promise<PromiseSettledResult<SourceResult<CVEDetail>>[]> {
+  const results: PromiseSettledResult<SourceResult<CVEDetail>>[] = []
+  const batchSize = CVE_CONFIG.MAX_CONCURRENT  // 5
+
+  for (let i = 0; i < cveIds.length; i += batchSize) {
+    const batch = cveIds.slice(i, i + batchSize)
+    const settled = await Promise.allSettled(
+      batch.map(id =>
+        withBreaker('nvd', kv, () => fetchCVEFull(id, kv, nvdKey, forceRefresh)),
+      ),
+    )
+    results.push(...settled)
+  }
+
+  return results
+}
 
 async function persistSearch(
   query: LookupQuery,
@@ -163,15 +190,12 @@ export async function runLookup(
     withBreaker('sslbl',         env.KV, () => fetchSSLBL(query, env.KV)),
   ])
 
-  // ── Layer 3: CVE enrichment — only if InternetDB found CVEs ──────────────
+  // ── Layer 3: CVE enrichment — batched 5-at-a-time ────────────────────────
   const idbData = unwrap<InternetDBResult>(internetdbResult)
-  // Cap at configured max CVEs to avoid stampeding NVD with unbounded concurrent requests
   const cveIds = (idbData?.vulns ?? []).slice(0, CVE_CONFIG.MAX_PER_LOOKUP)
 
-  const vulns = await Promise.allSettled(
-    cveIds.map(id =>
-      withBreaker('nvd', env.KV, () => fetchCVEFull(id, env.KV, env.NVD_KEY, query.forceRefresh)),
-    ),
+  const vulns = await fetchCVEsBatched(
+    cveIds, env.KV, env.NVD_KEY, query.forceRefresh ?? false,
   ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
 
   // ── Layer 4: Bucket recon + Wayback — domain queries only ────────────────
