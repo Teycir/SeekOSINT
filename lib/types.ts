@@ -288,6 +288,14 @@ export interface Env {
   DB: D1Database
   NVD_KEY: string
   ABUSECH_KEY: string
+  ADMIN_TOKEN?: string
+  /**
+   * Optional webhook endpoint.  When set, the cron job POSTs a JSON payload
+   * there for every target that has changed since the last snapshot.
+   * Format: any HTTPS URL that accepts POST with Content-Type: application/json.
+   * Slack incoming webhooks, Discord webhooks, and generic HTTP endpoints all work.
+   */
+  WEBHOOK_URL?: string
   // GHW_KEY_1 … GHW_KEY_18 — accessed dynamically via collectSecrets()
   [key: string]: unknown
 }

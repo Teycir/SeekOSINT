@@ -8,8 +8,10 @@
  *   1. Re-runs the full lookup (forceRefresh=true to bypass KV cache).
  *   2. Diffs the new result against the stored snapshot.
  *   3. Persists the new snapshot and updated checked_at.
- *   4. If meaningful changes found → logs a structured change event.
- *      (Webhook / email dispatch is a TODO behind a flag — see ROADMAP.)
+ *   4. If meaningful changes found → dispatches a webhook POST to WEBHOOK_URL
+ *      (set the secret with `wrangler secret put WEBHOOK_URL`).
+ *      Slack incoming webhooks, Discord webhooks, and any generic HTTPS
+ *      endpoint that accepts application/json are all supported.
  *
  * Change detection covers:
  *   - New open ports / closed ports
@@ -78,6 +80,50 @@ function diffResults(prev: HostResult, next: HostResult): string[] {
   return changes
 }
 
+// ─── Webhook dispatch ─────────────────────────────────────────────────────────
+
+/**
+ * POST change events to WEBHOOK_URL.
+ *
+ * Payload shape (works with Slack, Discord, and generic HTTP endpoints):
+ *
+ *   Slack / Discord compatible:
+ *     { text: "…", attachments: [{…}] }
+ *
+ *   Generic:
+ *     { events: ChangeEvent[], sentAt: number }
+ *
+ * We send the generic shape.  Slack / Discord users should set up a small
+ * relay or use a workflow tool (Zapier, Make, n8n) to reformat it.
+ *
+ * Errors here are non-fatal — the snapshot is already persisted.
+ */
+async function dispatchWebhook(
+  webhookUrl: string,
+  events:     ChangeEvent[],
+): Promise<void> {
+  try {
+    const payload = {
+      sentAt: Math.floor(Date.now() / 1000),
+      events,
+    }
+
+    const res = await fetch(webhookUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+
+    if (!res.ok) {
+      console.error(`[cron] webhook POST failed: HTTP ${res.status}`)
+    } else {
+      console.log(`[cron] webhook dispatched — ${events.length} change event(s)`)
+    }
+  } catch (err) {
+    console.error('[cron] webhook dispatch error', err)
+  }
+}
+
 // ─── Cron handler ─────────────────────────────────────────────────────────────
 
 export default {
@@ -139,14 +185,15 @@ export default {
         // Persist fresh snapshot regardless of diff outcome
         await updateTargetSnapshot(env.DB, target.id, nextJson)
         console.log(`[cron] updated snapshot for ${target.query}`)
-
-        // TODO: webhook dispatch
-        // if (changeEvents.length > 0 && env.WEBHOOK_URL) {
-        //   await dispatchWebhook(env.WEBHOOK_URL, changeEvents)
-        // }
       } catch (err) {
         console.error(`[cron] lookup failed for ${target.query}`, err)
       }
+    }
+
+    // ── Webhook dispatch ───────────────────────────────────────────────────
+    if (changeEvents.length > 0 && env.WEBHOOK_URL) {
+      // ctx.waitUntil so the Worker doesn't terminate before the POST completes
+      ctx.waitUntil(dispatchWebhook(env.WEBHOOK_URL, changeEvents))
     }
 
     console.log(

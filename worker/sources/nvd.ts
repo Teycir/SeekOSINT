@@ -22,7 +22,7 @@
  */
 import type { CVEDetail, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error } from '../../lib/results'
+import { ok, error, safeJson } from '../../lib/results'
 import { sleep } from '../../lib/backoff'
 import {
   getBreakerState,
@@ -114,7 +114,11 @@ async function fetchFromNVD(
   )
   if (!res.ok) throw new Error(`NVD HTTP ${res.status}`)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await res.json<any>()
+  const json = await safeJson<any>(
+    res,
+    (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+    'nvd',
+  )
   const detail = parseNVD(cveId, json)
   if (!detail) throw new Error('NVD: no vulnerability data in response')
   return detail
@@ -145,7 +149,11 @@ async function fetchFromCIRCL(cveId: string): Promise<CVEDetail> {
   )
   if (!res.ok) throw new Error(`CIRCL HTTP ${res.status}`)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await res.json<any>()
+  const json = await safeJson<any>(
+    res,
+    (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+    'circl',
+  )
   return parseCIRCL(cveId, json)
 }
 
@@ -168,7 +176,11 @@ export async function fetchOSV(
     )
     if (!res.ok) throw new Error(`OSV HTTP ${res.status}`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = await res.json<any>()
+    const json = await safeJson<any>(
+      res,
+      (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+      'osv',
+    )
 
     const cweIds: string[] | undefined = json.database_specific?.cwe_ids
     const refs: string[] | undefined = json.references?.map(

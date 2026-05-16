@@ -30,9 +30,8 @@
 ## 🔴 Must do before sharing publicly
 
 - [ ] Run BFG to scrub `.env` from git history, then rotate all keys
-- [ ] `wrangler secret put` for NVD_KEY, ABUSECH_KEY, ADMIN_TOKEN, GRAYHATWARFARE_API_KEY_1..18
-- [ ] Validate external API responses before parsing — malformed upstream should return `status: 'error'`, not crash
-- [ ] Wire up `/api/admin/reset-breaker` — file exists, KV mutation not implemented
+- [ ] `wrangler secret put` for ADMIN_TOKEN, WEBHOOK_URL
+- [x] Validate external API responses before parsing — `safeJson<T>(res, guard, label)` in `lib/results.ts`; all 10 source files updated; malformed upstream → `status: 'error'`, never a crash or bad cache write
 
 ---
 
@@ -60,7 +59,7 @@
 - [x] `GET /api/targets` — list all saved targets.
 - [x] `DELETE /api/targets/:id` — remove a target.
 - [x] Daily cron — `worker/cron.ts` re-queries all targets, diffs ports/CVEs/threat hits, persists snapshot.
-- [ ] Email or webhook notification on change — `WEBHOOK_URL` env var wired, dispatch TODO behind flag.
+- [x] Email or webhook notification on change — POST to `WEBHOOK_URL` env var; payload `{ sentAt, events[] }` dispatched via `ctx.waitUntil` after each cron sweep.
 
 ### Batch lookup
 - [x] `POST /api/batch` — up to 20 queries, all in parallel, partial failures isolated per-item.

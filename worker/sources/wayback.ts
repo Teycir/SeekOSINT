@@ -9,7 +9,7 @@
  */
 import type { LookupQuery, SourceResult, WaybackResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'wayback'
 
@@ -45,7 +45,11 @@ export async function fetchWayback(
     // CDX returns a JSON array of arrays; first row is the field header.
     // When there are no results the API returns an empty array [] — guard
     // against that before slicing so we don't treat row[0] as a data row.
-    const rows = await res.json<string[][]>()
+    const rows = await safeJson<string[][]>(
+      res,
+      (v): v is string[][] => Array.isArray(v),
+      SOURCE,
+    )
     if (!Array.isArray(rows) || rows.length <= 1) {
       await cachePut(kv, cacheKey, [], TTL.WAYBACK)
       return ok(SOURCE, [])

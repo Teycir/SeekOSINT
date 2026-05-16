@@ -7,9 +7,14 @@
  */
 import type { BGPViewResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'bgpview'
+
+function hasBGPViewData(v: unknown): v is { data: Record<string, unknown> } {
+  if (typeof v !== 'object' || v === null) return false
+  return 'data' in (v as object)
+}
 
 export async function fetchBGPView(
   query: LookupQuery,
@@ -41,7 +46,7 @@ export async function fetchBGPView(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = await res.json<any>()
+    const json = await safeJson<any>(res, hasBGPViewData, SOURCE)
     const d = json.data
 
     // /ip and /asn responses have very different shapes.

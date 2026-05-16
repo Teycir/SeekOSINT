@@ -9,7 +9,7 @@
  */
 import type { LookupQuery, RobtexResult, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'robtex'
 const MAX_DNS_RECORDS = 100
@@ -36,7 +36,11 @@ export async function fetchRobtex(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = await res.json<any>()
+    const json = await safeJson<any>(
+      res,
+      (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+      SOURCE,
+    )
 
     const data: RobtexResult = {
       as:         json.as ?? 0,

@@ -10,7 +10,7 @@
  */
 import type { CertRecord, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'crtsh'
 const MAX_RESULTS = 500
@@ -47,7 +47,11 @@ export async function fetchCRTSH(
       return error(SOURCE, `HTTP ${res.status}`)
     }
 
-    const raw = await res.json<RawCert[]>()
+    const raw = await safeJson<RawCert[]>(
+      res,
+      (v): v is RawCert[] => Array.isArray(v),
+      SOURCE,
+    )
 
     // Deduplicate by name_value, normalise shape, cap at MAX_RESULTS
     const seen = new Set<string>()

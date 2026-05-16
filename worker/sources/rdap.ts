@@ -10,7 +10,7 @@
  */
 import type { LookupQuery, RDAPContact, RDAPResult, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'rdap'
 
@@ -31,7 +31,12 @@ async function getRDAPBaseForDomain(
         signal: AbortSignal.timeout(8000),
       })
       if (!res.ok) return null
-      boot = await res.json<BootstrapEntry>()
+      boot = await safeJson<BootstrapEntry>(
+        res,
+        (v): v is BootstrapEntry =>
+          typeof v === 'object' && v !== null && Array.isArray((v as BootstrapEntry).services),
+        'rdap-dns-bootstrap',
+      )
       await cachePut(kv, CacheKey.rdapBootDNS(), boot, TTL.RDAP)
     } catch (err) {
       console.error('[rdap] getRDAPBaseForDomain bootstrap fetch failed:', err)
@@ -55,7 +60,12 @@ async function getRDAPBaseForIP(
         signal: AbortSignal.timeout(8000),
       })
       if (res.ok) {
-        boot = await res.json<BootstrapEntry>()
+        boot = await safeJson<BootstrapEntry>(
+          res,
+          (v): v is BootstrapEntry =>
+            typeof v === 'object' && v !== null && Array.isArray((v as BootstrapEntry).services),
+          'rdap-ip-bootstrap',
+        )
         await cachePut(kv, CacheKey.rdapBootIP(), boot, TTL.RDAP)
       }
     } catch (err) {
@@ -184,7 +194,11 @@ export async function fetchRDAP(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json = await res.json<any>()
+    const json = await safeJson<any>(
+      res,
+      (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+      SOURCE,
+    )
     const data = query.type === 'ip' ? normaliseIP(json) : normaliseDomain(json)
 
     await cachePut(kv, cacheKey, data, TTL.RDAP)

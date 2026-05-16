@@ -19,7 +19,7 @@ import type {
   URLhausResult,
 } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 // ─── Shared POST helper ───────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ async function abusePost<T>(
     signal: AbortSignal.timeout(8000),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json<T>()
+  return safeJson<T>(res, undefined, url)
 }
 
 // ─── URLhaus ──────────────────────────────────────────────────────────────────
@@ -93,7 +93,12 @@ export async function fetchThreatFox(
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json<ThreatFoxResult>()
+    const data = await safeJson<ThreatFoxResult>(
+      res,
+      (v): v is ThreatFoxResult =>
+        typeof v === 'object' && v !== null && 'query_status' in (v as object),
+      'threatfox',
+    )
     await cachePut(kv, cacheKey, data, TTL.ABUSECH)
     return ok(SOURCE, data)
   } catch (err) {
@@ -159,7 +164,11 @@ export async function fetchFeodo(
         { signal: AbortSignal.timeout(15000) },
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      list = await res.json<FeodoEntry[]>()
+      list = await safeJson<FeodoEntry[]>(
+        res,
+        (v): v is FeodoEntry[] => Array.isArray(v),
+        'feodo-blocklist',
+      )
       await cachePut(kv, CacheKey.feodoList(), list, TTL.BLOCKLIST)
     } catch (err) {
       console.error(`[${SOURCE}] blocklist download failed`, err)
@@ -194,7 +203,11 @@ export async function fetchSSLBL(
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       // The API wraps results under a "results" key
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const json = await res.json<any>()
+      const json = await safeJson<any>(
+        res,
+        (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+        'sslbl-blocklist',
+      )
       list = (json.results ?? json) as SSLBLEntry[]
       await cachePut(kv, CacheKey.sslblList(), list, TTL.BLOCKLIST)
     } catch (err) {

@@ -7,9 +7,19 @@
  */
 import type { InternetDBResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 
 const SOURCE = 'internetdb'
+
+function isInternetDBResult(v: unknown): v is InternetDBResult {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return (
+    typeof r.ip === 'string' &&
+    Array.isArray(r.ports) &&
+    Array.isArray(r.vulns)
+  )
+}
 
 export async function fetchInternetDB(
   query: LookupQuery,
@@ -46,7 +56,7 @@ export async function fetchInternetDB(
       return error(SOURCE, `HTTP ${res.status}`)
     }
 
-    const data = await res.json<InternetDBResult>()
+    const data = await safeJson<InternetDBResult>(res, isInternetDBResult, SOURCE)
     await cachePut(kv, cacheKey, data, TTL.CORE)
     return ok(SOURCE, data)
   } catch (err) {

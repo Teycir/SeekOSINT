@@ -10,7 +10,7 @@
  */
 import type { IPAPIResult, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
-import { ok, error, skipped } from '../../lib/results'
+import { ok, error, skipped, safeJson } from '../../lib/results'
 import { withBackoff } from '../../lib/backoff'
 
 const SOURCE = 'ipapi'
@@ -33,6 +33,12 @@ interface RawIPAPI {
   proxy: boolean
   hosting: boolean
   mobile: boolean
+}
+
+function isRawIPAPI(v: unknown): v is RawIPAPI {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return typeof r.status === 'string' && typeof r.query === 'string'
 }
 
 export async function fetchIPAPI(
@@ -59,7 +65,7 @@ export async function fetchIPAPI(
       return error(SOURCE, `HTTP ${res.status}`)
     }
 
-    const raw = await res.json<RawIPAPI>()
+    const raw = await safeJson<RawIPAPI>(res, isRawIPAPI, SOURCE)
 
     if (raw.status === 'fail') {
       console.error(`[${SOURCE}] API fail: ${raw.message} for ${query.normalised}`)

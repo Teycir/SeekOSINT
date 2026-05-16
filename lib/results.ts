@@ -28,6 +28,40 @@ export function skipped<T>(source: string): SourceResult<T> {
 }
 
 /**
+ * Parse the JSON body of a Response, with optional structural validation.
+ *
+ * Throws a descriptive Error (never returns undefined/null) so callers
+ * can let the surrounding try/catch turn it into an `error()` result.
+ *
+ * @param res    — a Response whose body has NOT been consumed yet
+ * @param guard  — optional predicate; if it returns false the parse is
+ *                 treated as malformed and an error is thrown
+ * @param label  — human-readable name used in the thrown error message
+ *
+ * Usage:
+ *   const data = await safeJson<InternetDBResult>(res, isInternetDBResult, 'internetdb')
+ */
+export async function safeJson<T>(
+  res: Response,
+  guard?: (v: unknown) => v is T,
+  label = 'upstream',
+): Promise<T> {
+  let parsed: unknown
+  try {
+    parsed = await res.json()
+  } catch {
+    throw new Error(`${label}: response body is not valid JSON`)
+  }
+  if (parsed === null || parsed === undefined) {
+    throw new Error(`${label}: response body is null or empty`)
+  }
+  if (guard && !guard(parsed)) {
+    throw new Error(`${label}: response shape validation failed`)
+  }
+  return parsed as T
+}
+
+/**
  * Unwrap a PromiseSettledResult into a SourceResult.
  * A rejected promise produces an error SourceResult so the orchestrator
  * never has to deal with thrown values from Promise.allSettled().
