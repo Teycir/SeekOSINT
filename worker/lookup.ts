@@ -260,12 +260,46 @@ export async function runLookup(
   //   ASN        → the synthetic IP derived from the first announced prefix
   const effectiveIPQuery: LookupQuery = ipQuery ?? asnSyntheticIPQuery ?? query
 
+  // ── CDN / anycast detection ────────────────────────────────────────────────
+  // Run InternetDB as a pre-flight. If the effective IP is tagged as CDN/proxy,
+  // IP-specific sources (ip-api, robtex, bgpview, feodo, sslbl, threat-intel-IP)
+  // will either fail or return meaningless shared-infrastructure data.
+  // We skip them and rely on domain-string sources instead, which avoids
+  // tripping circuit breakers on every Cloudflare-proxied domain lookup.
+  //
+  // CDN tags in InternetDB: 'cdn', 'cloud', 'proxy' (set by Shodan)
+  const CDN_TAGS = new Set(['cdn', 'cloud', 'proxy'])
+
+  let internetdbPreflight: SourceResult<InternetDBResult> | null = null
+  let isCDNIP = false
+
+  // Only run the pre-flight when we have a resolved IP from a domain query
+  // (ASN synthetic IPs and direct IP queries are never CDN-tagged meaningfully).
+  if (query.type === 'domain' && ipQuery !== null) {
+    const preflight = await withBreaker(
+      'internetdb', env.KV, () => fetchInternetDB(ipQuery, env.KV),
+    )
+    internetdbPreflight = preflight
+    if (preflight.status === 'ok' || preflight.status === 'cached') {
+      const tags = (preflight.data?.tags ?? []).map(t => t.toLowerCase())
+      isCDNIP = tags.some(t => CDN_TAGS.has(t))
+      if (isCDNIP) {
+        console.log(
+          `[lookup] CDN IP detected for ${query.normalised} (${ipQuery.normalised}) — skipping IP-specific sources`,
+        )
+      }
+    }
+  }
+
   // ── Layers 1 + 2 run concurrently (each guarded by its circuit breaker) ──
   //
   // For domain queries, threat intel is run against BOTH the original domain
   // string AND the resolved IP in parallel, then the best result is selected.
   // A domain listed as malicious in URLhaus/ThreatFox must not get a clean
   // result just because we searched the resolved IP instead of the domain name.
+  //
+  // Exception: when isCDNIP is true, the IP-path threat intel is skipped —
+  // searching a shared Cloudflare anycast IP in abuse.ch returns noise.
   const domainQuery = query.type === 'domain' ? query : null
 
   const [
@@ -288,24 +322,49 @@ export async function runLookup(
     threatfoxDomainResult,
     malwarebazaarDomainResult,
   ] = await Promise.allSettled([
-    // IP-only sources: use effectiveIPQuery (resolved IP for domains, synthetic IP for ASN)
-    withBreaker('internetdb', env.KV, () => fetchInternetDB(effectiveIPQuery, env.KV)),
-    withBreaker('ipapi',      env.KV, () => fetchIPAPI(effectiveIPQuery, env.KV)),
-    // BGPView: pass effectiveIPQuery so domain lookups populate the Overview card
-    withBreaker('bgpview',    env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
-    // Domain + IP sources: use the original query for RDAP/crt.sh (want the domain name)
+    // InternetDB: use pre-flight result when available (CDN detection ran it already)
+    internetdbPreflight !== null
+      ? Promise.resolve(internetdbPreflight)
+      : withBreaker('internetdb', env.KV, () => fetchInternetDB(effectiveIPQuery, env.KV)),
+
+    // ip-api, bgpview, robtex — skip for CDN IPs (they fail or return noise)
+    isCDNIP
+      ? Promise.resolve({ source: 'ipapi',   status: 'skipped' as const, data: null })
+      : withBreaker('ipapi', env.KV, () => fetchIPAPI(effectiveIPQuery, env.KV)),
+    isCDNIP
+      ? Promise.resolve({ source: 'bgpview', status: 'skipped' as const, data: null })
+      : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
+
+    // Domain + IP sources: always run regardless of CDN status
     withBreaker('rdap',       env.KV, () => fetchRDAP(query, env.KV)),
     withBreaker('crtsh',      env.KV, () => fetchCRTSH(query, env.KV)),
-    // PassiveDNS: pass ipQuery so domain lookups also pivot by resolved IP
     withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV, ipQuery)),
-    withBreaker('robtex',     env.KV, () => fetchRobtex(effectiveIPQuery, env.KV)),
-    // Threat intel — IP path (always runs)
-    withBreaker('urlhaus',       env.KV, () => fetchURLhaus(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
-    withBreaker('threatfox',     env.KV, () => fetchThreatFox(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
-    withBreaker('malwarebazaar', env.KV, () => fetchMalwareBazaar(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
-    withBreaker('feodo',         env.KV, () => fetchFeodo(effectiveIPQuery, env.DB)),
-    withBreaker('sslbl',         env.KV, () => fetchSSLBL(effectiveIPQuery, env.DB)),
-    // Threat intel — domain-string path (only for domain queries)
+
+    // Robtex — skip for CDN IPs
+    isCDNIP
+      ? Promise.resolve(skipped<ReturnType<typeof fetchRobtex> extends Promise<SourceResult<infer T>> ? T : never>('robtex'))
+      : withBreaker('robtex', env.KV, () => fetchRobtex(effectiveIPQuery, env.KV)),
+
+    // Threat intel — IP path: skip for CDN IPs (shared anycast = noise)
+    isCDNIP
+      ? Promise.resolve({ source: 'urlhaus',       status: 'skipped' as const, data: null })
+      : withBreaker('urlhaus',       env.KV, () => fetchURLhaus(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
+    isCDNIP
+      ? Promise.resolve({ source: 'threatfox',     status: 'skipped' as const, data: null })
+      : withBreaker('threatfox',     env.KV, () => fetchThreatFox(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
+    isCDNIP
+      ? Promise.resolve({ source: 'malwarebazaar', status: 'skipped' as const, data: null })
+      : withBreaker('malwarebazaar', env.KV, () => fetchMalwareBazaar(effectiveIPQuery, env.KV, env.ABUSECH_KEY)),
+
+    // Feodo / SSLBL: D1 blocklists — skip for CDN IPs
+    isCDNIP
+      ? Promise.resolve({ source: 'feodo', status: 'skipped' as const, data: null })
+      : withBreaker('feodo', env.KV, () => fetchFeodo(effectiveIPQuery, env.DB)),
+    isCDNIP
+      ? Promise.resolve({ source: 'sslbl', status: 'skipped' as const, data: null })
+      : withBreaker('sslbl', env.KV, () => fetchSSLBL(effectiveIPQuery, env.DB)),
+
+    // Threat intel — domain-string path (only for domain queries; always runs regardless of CDN)
     domainQuery
       ? withBreaker('urlhaus',       env.KV, () => fetchURLhaus(domainQuery, env.KV, env.ABUSECH_KEY))
       : Promise.resolve({ source: 'urlhaus',       status: 'skipped' as const, data: null }),
@@ -382,6 +441,10 @@ export async function runLookup(
   // ── Merge & return ────────────────────────────────────────────────────────
   const result = mergeResults({
     query,
+    // Pass the DoH-resolved IP explicitly so merge always shows it even
+    // when geo/ipapi was skipped (CDN path). Also signals DNS failure.
+    resolvedIP:         ipQuery?.normalised ?? undefined,
+    dnsResolutionFailed: query.type === 'domain' && ipQuery === null,
     core: {
       internetdb: internetdbResult,
       geo:        geoResult,

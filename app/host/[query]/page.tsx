@@ -39,7 +39,7 @@ export async function generateMetadata({
 async function fetchResult(rawQuery: string, forceRefresh = false): Promise<HostResult | null> {
   try {
     const query = parseQuery(rawQuery)
-    if (!query) return null
+    if (!query) return null  // unparseable input — truly invalid, show 404
     const { env, ctx } = getCloudflareContext()
     return await runLookup({ ...query, forceRefresh }, env as unknown as Env, ctx)
   } catch (err) {
@@ -116,13 +116,27 @@ function OverviewSection({ result }: { result: HostResult }) {
   const geo = result.core.geo
   const idb = result.core.internetdb
   const bgp = result.core.bgp
+  const isCDN = sourceOk(idb) && idb.data.tags.some(t =>
+    ['cdn', 'cloud', 'proxy'].includes(t.toLowerCase()),
+  )
+
   return (
     <Card title="Overview">
+      {result.dnsResolutionFailed && (
+        <p className="mb-3 text-xs text-amber-500 font-mono">
+          DNS resolution failed — IP-based sources unavailable. Domain-only sources (RDAP, certificates, passive DNS) still ran.
+        </p>
+      )}
       <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
         {result.resolvedIP && (
           <div>
-            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">IP</dt>
-            <dd><Mono value={result.resolvedIP} /></dd>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">
+              {result.query.type === 'domain' ? 'Resolved IP' : 'IP'}
+            </dt>
+            <dd className="inline-flex items-center gap-1.5">
+              <Mono value={result.resolvedIP} />
+              {isCDN && <Badge label="CDN" variant="warn" />}
+            </dd>
           </div>
         )}
         {result.resolvedDomain && (

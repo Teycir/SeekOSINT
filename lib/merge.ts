@@ -35,6 +35,10 @@ import { computeRiskScore } from './risk'
 
 interface MergeInput {
   query: LookupQuery
+  /** For domain queries: the IP that DNS resolved to (null = failed). */
+  resolvedIP?: string | null
+  /** True when the domain could not be resolved to any IP. */
+  dnsResolutionFailed?: boolean
   core: {
     internetdb: PromiseSettledResult<SourceResult<InternetDBResult>>
     geo:        PromiseSettledResult<SourceResult<IPAPIResult>>
@@ -128,9 +132,13 @@ export function mergeResults(input: MergeInput): HostResult {
     if (idb && idb.hostnames.length > 0) resolvedDomain = idb.hostnames[0]
   } else if (query.type === 'domain') {
     resolvedDomain = query.normalised
-    // Geo source returns the IP we resolved to
-    const geo = core.geo.data
-    if (geo) resolvedIP = geo.ip
+    // Prefer the IP passed in from the orchestrator (set before CDN detection)
+    // so it's always populated, even when geo was skipped for CDN IPs.
+    if (input.resolvedIP) {
+      resolvedIP = input.resolvedIP
+    } else if (core.geo.data) {
+      resolvedIP = core.geo.data.ip  // fallback
+    }
   }
 
   // Collect all non-skipped results for meta counting
@@ -147,6 +155,7 @@ export function mergeResults(input: MergeInput): HostResult {
     query,
     ...(resolvedIP !== undefined && { resolvedIP }),
     ...(resolvedDomain !== undefined && { resolvedDomain }),
+    ...(input.dnsResolutionFailed && { dnsResolutionFailed: true }),
     core,
     threat,
     normalizedThreats: normalizeThreatIndicators({
