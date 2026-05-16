@@ -2,12 +2,12 @@
  * abuse.ch — five threat intel sources under one API key.
  *
  * All five use POST with application/x-www-form-urlencoded.
- * Feodo and SSLBL use a bulk-download strategy: the full blocklist is
- * fetched once per hour into KV, then lookups are local in-memory finds.
+ * Feodo and SSLBL use D1 tables (populated by the cron worker hourly).
+ * Lookups are a single indexed SELECT — no in-memory scanning.
  *
  * Sources: URLhaus, ThreatFox, MalwareBazaar, Feodo Tracker, SSLBL
  * Auth:    single ABUSECH_KEY for URLhaus, ThreatFox, MalwareBazaar
- * TTL:     30 minutes (threat intel), 1 hour (blocklists)
+ * TTL:     30 minutes (threat intel) | blocklists refreshed hourly via cron
  */
 import type {
   FeodoEntry,
@@ -144,80 +144,58 @@ export async function fetchMalwareBazaar(
 }
 
 // ─── Feodo Tracker ────────────────────────────────────────────────────────────
-// Downloads full blocklist into KV once per hour. Lookups are local in-memory.
+// Lookup is a single indexed SELECT on D1 (populated hourly by cron).
 
 export async function fetchFeodo(
   query: LookupQuery,
-  kv: KVNamespace,
+  db: D1Database,
 ): Promise<SourceResult<FeodoEntry | null>> {
   const SOURCE = 'feodo'
 
-  // Feodo only has meaning for IPs
   if (query.type !== 'ip') return skipped(SOURCE)
 
-  let list = await cacheGet<FeodoEntry[]>(kv, CacheKey.feodoList(), query.forceRefresh)
+  try {
+    const row = await db
+      .prepare(
+        `SELECT ip_address, port, status, hostname, as_number, as_name,
+                country, first_seen, last_seen, malware
+         FROM feodo_blocklist WHERE ip_address = ?`,
+      )
+      .bind(query.normalised)
+      .first<FeodoEntry>()
 
-  if (!list) {
-    try {
-      const res = await fetch(
-        'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
-        { signal: AbortSignal.timeout(15000) },
-      )
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      list = await safeJson<FeodoEntry[]>(
-        res,
-        (v): v is FeodoEntry[] => Array.isArray(v),
-        'feodo-blocklist',
-      )
-      await cachePut(kv, CacheKey.feodoList(), list, TTL.BLOCKLIST)
-    } catch (err) {
-      console.error(`[${SOURCE}] blocklist download failed`, err)
-      return error(SOURCE, String(err))
-    }
+    return ok(SOURCE, row ?? null)
+  } catch (err) {
+    console.error(`[${SOURCE}] D1 lookup failed for ${query.normalised}`, err)
+    return error(SOURCE, String(err))
   }
-
-  const match = list.find(e => e.ip_address === query.normalised) ?? null
-  return ok(SOURCE, match)
 }
 
 // ─── SSLBL ────────────────────────────────────────────────────────────────────
-// Same bulk-download strategy as Feodo.
+// Lookup by dst_ip via an index on sslbl_blocklist.dst_ip (populated hourly by cron).
 
 export async function fetchSSLBL(
   query: LookupQuery,
-  kv: KVNamespace,
+  db: D1Database,
 ): Promise<SourceResult<SSLBLEntry[]>> {
   const SOURCE = 'sslbl'
 
-  // SSLBL tracks SSL certificates — only meaningful for IP queries
   if (query.type !== 'ip') return skipped(SOURCE)
 
-  let list = await cacheGet<SSLBLEntry[]>(kv, CacheKey.sslblList(), query.forceRefresh)
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT sha1 as SHA1, listing_date as Listingdate, listing_time as Listingtime,
+                suspicious_reason as SuspiciousReason,
+                dst_ip as DstIP, dst_port as DstPort, subject as Subject
+         FROM sslbl_blocklist WHERE dst_ip = ?`,
+      )
+      .bind(query.normalised)
+      .all<SSLBLEntry>()
 
-  if (!list) {
-    try {
-      const res = await fetch(
-        'https://sslbl.abuse.ch/blacklist/sslblacklist.json',
-        { signal: AbortSignal.timeout(15000) },
-      )
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      // The API wraps results under a "results" key
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const json = await safeJson<any>(
-        res,
-        (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
-        'sslbl-blocklist',
-      )
-      list = (json.results ?? json) as SSLBLEntry[]
-      await cachePut(kv, CacheKey.sslblList(), list, TTL.BLOCKLIST)
-    } catch (err) {
-      console.error(`[${SOURCE}] blocklist download failed`, err)
-      return error(SOURCE, String(err))
-    }
+    return ok(SOURCE, results ?? [])
+  } catch (err) {
+    console.error(`[${SOURCE}] D1 lookup failed for ${query.normalised}`, err)
+    return error(SOURCE, String(err))
   }
-
-  // SSLBL indexes by SHA1 fingerprint, not IP. The JSON feed does include
-  // a "DstIP" field on each entry — filter by that to surface matches.
-  const matches = list.filter(e => (e as unknown as { DstIP?: string }).DstIP === query.normalised)
-  return ok(SOURCE, matches)
 }

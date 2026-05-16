@@ -186,8 +186,8 @@ export async function runLookup(
     withBreaker('urlhaus',       env.KV, () => fetchURLhaus(query, env.KV, env.ABUSECH_KEY)),
     withBreaker('threatfox',     env.KV, () => fetchThreatFox(query, env.KV, env.ABUSECH_KEY)),
     withBreaker('malwarebazaar', env.KV, () => fetchMalwareBazaar(query, env.KV, env.ABUSECH_KEY)),
-    withBreaker('feodo',         env.KV, () => fetchFeodo(query, env.KV)),
-    withBreaker('sslbl',         env.KV, () => fetchSSLBL(query, env.KV)),
+    withBreaker('feodo',         env.KV, () => fetchFeodo(query, env.DB)),
+    withBreaker('sslbl',         env.KV, () => fetchSSLBL(query, env.DB)),
   ])
 
   // ── Layer 3: CVE enrichment — batched 5-at-a-time ────────────────────────

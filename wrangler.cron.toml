@@ -1,5 +1,5 @@
 ## wrangler.cron.toml
-## Standalone Worker for the daily saved-target cron sweep.
+## Standalone Worker for the hourly blocklist refresh + daily target sweep.
 ## Deploy with: wrangler deploy --config wrangler.cron.toml
 ##
 ## This is kept separate from wrangler.toml (which drives the Pages build)
@@ -11,7 +11,10 @@ compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-crons = ["0 3 * * *"]
+# Hourly — blocklist refresh checks its own TTL (blocklist_meta table)
+# and skips if already fresh. Saved-target sweep is lightweight when
+# KV cache is warm. Two jobs, one trigger.
+crons = ["0 * * * *"]
 
 [[kv_namespaces]]
 binding = "KV"

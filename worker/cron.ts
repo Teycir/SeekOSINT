@@ -1,30 +1,155 @@
 /**
- * worker/cron.ts — Cloudflare Worker for daily saved-target re-queries.
+ * worker/cron.ts — two scheduled jobs in one Worker.
  *
- * Deployed separately from the Pages app via wrangler.cron.toml.
- * Triggered by a cron schedule (0 3 * * * = 03:00 UTC daily).
+ * 1. Blocklist refresh (runs on every trigger)
+ *    Downloads Feodo and SSLBL from abuse.ch, upserts into D1 tables.
+ *    Skips each list if refreshed within the last hour (blocklist_meta).
  *
- * For each saved target:
- *   1. Re-runs the full lookup (forceRefresh=true to bypass KV cache).
- *   2. Diffs the new result against the stored snapshot.
- *   3. Persists the new snapshot and updated checked_at.
- *   4. If meaningful changes found → dispatches a webhook POST to WEBHOOK_URL
- *      (set the secret with `wrangler secret put WEBHOOK_URL`).
- *      Slack incoming webhooks, Discord webhooks, and any generic HTTPS
- *      endpoint that accepts application/json are all supported.
- *
- * Change detection covers:
- *   - New open ports / closed ports
- *   - New CVE IDs
- *   - New threat feed hits (URLhaus, ThreatFox, Feodo)
- *   - ASN change
- *   - Geo country change
+ * 2. Saved-target sweep (runs on every trigger)
+ *    Re-queries all saved targets, diffs results, fires webhook on changes.
+ *    Safe to run hourly — runLookup respects KV cache so upstream is only
+ *    hit when forceRefresh=true and the KV TTL has expired.
  */
 
 import { listTargets, updateTargetSnapshot } from '../lib/targets'
 import { runLookup } from './lookup'
 import { parseQuery } from '../lib/validate'
-import type { Env, HostResult } from '../lib/types'
+import { safeJson } from '../lib/results'
+import type { Env, FeodoEntry, HostResult, SSLBLEntry } from '../lib/types'
+
+// ─── Blocklist refresh ────────────────────────────────────────────────────────
+
+const BLOCKLIST_REFRESH_INTERVAL = 60 * 60  // 1 hour in seconds
+
+async function shouldRefresh(db: D1Database, name: string): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare(`SELECT refreshed_at FROM blocklist_meta WHERE name = ?`)
+      .bind(name)
+      .first<{ refreshed_at: number }>()
+    if (!row) return true
+    return (Math.floor(Date.now() / 1000) - row.refreshed_at) > BLOCKLIST_REFRESH_INTERVAL
+  } catch {
+    return true  // assume stale on error
+  }
+}
+
+async function markRefreshed(db: D1Database, name: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO blocklist_meta (name, refreshed_at) VALUES (?, ?)
+       ON CONFLICT(name) DO UPDATE SET refreshed_at = excluded.refreshed_at`,
+    )
+    .bind(name, Math.floor(Date.now() / 1000))
+    .run()
+}
+
+async function refreshFeodo(db: D1Database): Promise<void> {
+  if (!(await shouldRefresh(db, 'feodo'))) {
+    console.log('[cron] feodo: fresh — skipping')
+    return
+  }
+
+  const res = await fetch(
+    'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
+    { signal: AbortSignal.timeout(20000) },
+  )
+  if (!res.ok) throw new Error(`feodo download HTTP ${res.status}`)
+
+  const list = await safeJson<FeodoEntry[]>(
+    res,
+    (v): v is FeodoEntry[] => Array.isArray(v),
+    'feodo-blocklist',
+  )
+
+  // Batch upserts — D1 batch() sends all statements in one HTTP round-trip
+  const CHUNK = 100
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list.slice(i, i + CHUNK)
+    await db.batch(
+      chunk.map(e =>
+        db.prepare(
+          `INSERT INTO feodo_blocklist
+             (ip_address, port, status, hostname, as_number, as_name,
+              country, first_seen, last_seen, malware)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(ip_address) DO UPDATE SET
+             port=excluded.port, status=excluded.status,
+             hostname=excluded.hostname, as_number=excluded.as_number,
+             as_name=excluded.as_name, country=excluded.country,
+             first_seen=excluded.first_seen, last_seen=excluded.last_seen,
+             malware=excluded.malware`,
+        ).bind(
+          e.ip_address, e.port ?? null, e.status ?? null,
+          e.hostname ?? null, e.as_number ?? null, e.as_name ?? null,
+          e.country ?? null, e.first_seen ?? null, e.last_seen ?? null,
+          e.malware ?? null,
+        ),
+      ),
+    )
+  }
+
+  await markRefreshed(db, 'feodo')
+  console.log(`[cron] feodo: upserted ${list.length} entries`)
+}
+
+async function refreshSSLBL(db: D1Database): Promise<void> {
+  if (!(await shouldRefresh(db, 'sslbl'))) {
+    console.log('[cron] sslbl: fresh — skipping')
+    return
+  }
+
+  const res = await fetch(
+    'https://sslbl.abuse.ch/blacklist/sslblacklist.json',
+    { signal: AbortSignal.timeout(20000) },
+  )
+  if (!res.ok) throw new Error(`sslbl download HTTP ${res.status}`)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = await safeJson<any>(
+    res,
+    (v): v is Record<string, unknown> => typeof v === 'object' && v !== null,
+    'sslbl-blocklist',
+  )
+  const list = (json.results ?? json) as SSLBLEntry[]
+
+  const CHUNK = 100
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list.slice(i, i + CHUNK)
+    await db.batch(
+      chunk.map(e =>
+        db.prepare(
+          `INSERT INTO sslbl_blocklist
+             (sha1, listing_date, listing_time, suspicious_reason,
+              dst_ip, dst_port, subject)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(sha1) DO UPDATE SET
+             listing_date=excluded.listing_date,
+             listing_time=excluded.listing_time,
+             suspicious_reason=excluded.suspicious_reason,
+             dst_ip=excluded.dst_ip, dst_port=excluded.dst_port,
+             subject=excluded.subject`,
+        ).bind(
+          e.SHA1, e.Listingdate ?? null, e.Listingtime ?? null,
+          e.SuspiciousReason ?? null,
+          (e as unknown as { DstIP?: string }).DstIP ?? null,
+          (e as unknown as { DstPort?: number }).DstPort ?? null,
+          (e as unknown as { Subject?: string }).Subject ?? null,
+        ),
+      ),
+    )
+  }
+
+  await markRefreshed(db, 'sslbl')
+  console.log(`[cron] sslbl: upserted ${list.length} entries`)
+}
+
+async function refreshBlocklists(db: D1Database): Promise<void> {
+  await Promise.allSettled([
+    refreshFeodo(db).catch(err => console.error('[cron] feodo refresh failed', err)),
+    refreshSSLBL(db).catch(err => console.error('[cron] sslbl refresh failed', err)),
+  ])
+}
 
 // ─── Change detection ─────────────────────────────────────────────────────────
 
@@ -133,8 +258,12 @@ export default {
     ctx:      ExecutionContext,
   ): Promise<void> {
     const started = Date.now()
-    console.log('[cron] starting saved-target sweep')
+    console.log('[cron] starting')
 
+    // ── 1. Blocklist refresh ───────────────────────────────────────────────
+    await refreshBlocklists(env.DB)
+
+    // ── 2. Saved-target sweep ─────────────────────────────────────────────
     const targets = await listTargets(env.DB).catch(err => {
       console.error('[cron] listTargets failed', err)
       return []

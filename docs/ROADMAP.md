@@ -42,7 +42,7 @@
 - [x] Stream Layer 1+2 results immediately — `VulnsStream` client component fetches via `GET /api/stream` (NDJSON); geo/ports/threats/certs SSR in <1s, CVE card shows pulsing skeleton then patches in when NVD responds. `lib/useHostStream.ts` for reuse.
 
 ### Blocklists (quick win)
-- [ ] Move Feodo and SSLBL into D1 tables with an index on IP/SHA1 — replace the current in-memory linear scan with a single indexed `SELECT`. One migration script.
+- [x] Feodo and SSLBL moved to D1 tables with indexes — `migrations/002_blocklists.sql`. Lookup is one indexed `SELECT` instead of an in-memory linear scan. Cron refreshes hourly via `refreshBlocklists()` in `worker/cron.ts`, skipping each list when `blocklist_meta` shows it's still fresh. Cron schedule changed from daily to hourly (`0 * * * *`).
 
 ---
 
