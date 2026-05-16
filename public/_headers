@@ -1,12 +1,7 @@
 /*
-  # Permissions-Policy: suppress deprecated FLoC/Topics headers that Turnstile triggers warnings for
+  # NOTE: Content-Security-Policy is set by middleware.ts (runs inside the Worker)
+  # because Cloudflare Pages overwrites any CSP set here with its own nonce-based
+  # policy. The middleware header wins over the Pages injection layer.
+  #
+  # Permissions-Policy is kept here as a secondary hint; it is also set by middleware.
   Permissions-Policy: browsing-topics=(), interest-cohort=()
-
-  # Content-Security-Policy
-  # 'unsafe-inline' is included in script-src as a fallback for browsers that
-  # don't support nonces. On modern browsers a nonce overrides unsafe-inline,
-  # so this does not weaken security where nonces are supported.
-  # 'unsafe-eval' is required by Cloudflare Turnstile's Web Worker.
-  # require-trusted-types-for is omitted — React DOM's hydration requires a
-  # default Trusted Types policy which is registered by TrustedTypesPolicy.tsx.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; worker-src blob:; child-src blob: https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self' https://challenges.cloudflare.com
