@@ -1,19 +1,72 @@
 /**
  * Search landing page — single input, client-side validation, redirect on submit.
+ * Turnstile invisible widget fires automatically; token is sent with the lookup.
  */
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseQuery } from '../lib/validate'
 import DecryptedText from './components/DecryptedText'
 import { AnimatedTagline } from './components/AnimatedTagline'
 import { RecentSearches } from './components/RecentSearches'
 
+// Turnstile site key — public, safe to expose in client code.
+// Use the always-passes test key when the env var is not set.
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '1x00000000000000000000AA'
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: string | HTMLElement, options: Record<string, unknown>) => string
+      reset: (widgetId: string) => void
+      remove: (widgetId: string) => void
+    }
+  }
+}
+
 export default function HomePage() {
   const router = useRouter()
   const [input, setInput] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
+  const tsToken = useRef<string | null>(null)
+  const widgetId = useRef<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Load Turnstile script and render invisible widget
+  useEffect(() => {
+    const scriptId = 'cf-turnstile-script'
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script')
+      script.id = scriptId
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+      script.async = true
+      script.defer = true
+      script.onload = renderWidget
+      document.head.appendChild(script)
+    } else if (window.turnstile) {
+      renderWidget()
+    }
+
+    function renderWidget() {
+      if (!containerRef.current || widgetId.current) return
+      widgetId.current = window.turnstile!.render(containerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        appearance: 'invisible',
+        callback: (token: string) => { tsToken.current = token },
+        'expired-callback': () => { tsToken.current = null },
+        'error-callback': () => { tsToken.current = null },
+      })
+    }
+
+    return () => {
+      if (widgetId.current && window.turnstile) {
+        window.turnstile.remove(widgetId.current)
+        widgetId.current = null
+      }
+    }
+  }, [])
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -27,7 +80,18 @@ export default function HomePage() {
     }
 
     setValidationError(null)
-    router.push(`/host/${encodeURIComponent(parsed.normalised)}`)
+
+    // Append token if available; server skips check when TURNSTILE_SECRET_KEY is unset
+    const token = tsToken.current
+    const dest = `/host/${encodeURIComponent(parsed.normalised)}${token ? `?ts=${encodeURIComponent(token)}` : ''}`
+
+    // Reset widget so next search gets a fresh token
+    if (widgetId.current && window.turnstile) {
+      window.turnstile.reset(widgetId.current)
+      tsToken.current = null
+    }
+
+    router.push(dest)
   }
 
   return (
@@ -37,12 +101,15 @@ export default function HomePage() {
         <div className="h-[600px] w-[600px] rounded-full bg-neon-red/5 blur-[120px]" />
       </div>
 
+      {/* Invisible Turnstile widget mount point */}
+      <div ref={containerRef} className="hidden" aria-hidden="true" />
+
       <div className="relative w-full max-w-xl space-y-8">
         {/* Header */}
         <div className="space-y-2 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-neon-red glow-text pulse-glow font-mono">
-            <DecryptedText 
-              text="seekosint" 
+            <DecryptedText
+              text="seekosint"
               speed={30}
               maxIterations={8}
               animateOn="view"
@@ -50,7 +117,7 @@ export default function HomePage() {
               encryptedClassName="text-neon-red/50"
             />
           </h1>
-          <AnimatedTagline text="Host intelligence across 12 sources — IP, domain, or ASN" />
+          <AnimatedTagline text="Host intelligence across 15 sources — IP, domain, or ASN" />
         </div>
 
         {/* Form */}
@@ -96,7 +163,7 @@ export default function HomePage() {
 
         {/* Sources hint */}
         <p className="text-center text-xs text-neon-red/30 font-mono">
-          InternetDB · IPinfo · BGPView · RDAP · crt.sh · PassiveDNS · and 11 more
+          InternetDB · IPinfo · BGPView · RDAP · crt.sh · PassiveDNS · and 9 more
         </p>
 
         {/* Recent searches — client-fetched from D1, hidden when empty */}

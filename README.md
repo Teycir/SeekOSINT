@@ -656,10 +656,12 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased roadmap.
 - ✅ Batch CVE enrichment (10 concurrent, `lib/config.ts CVE.MAX_CONCURRENT`)
 - ✅ Cron worker — hourly blocklist refresh + daily target re-query
 
-**Up next:**
-- [ ] Multi-query batch lookup (paste list of IPs)
-- [ ] Change notifications via webhook on target re-query diff
-- [ ] BFG to scrub `.env` from git history if needed
+**Up next (ordered by priority):**
+- [ ] Turnstile abuse defense — Cloudflare widget + server-side token validation in `/api/lookup`
+- [ ] `/api/admin/health` — aggregate breaker states, KV hit rates, recent error trends
+- [ ] Threat indicator normalization (`lib/normalize.ts`) — deduplicate cross-feed hits into canonical `ThreatIndicator` with provenance and confidence
+- [ ] Batch lookup proper orchestration — deduplicated enrichment, shared cache reuse, progressive NDJSON streaming per item
+- [ ] Webhook diff on target re-query — structured diff payload (ports/CVEs/threat hits) dispatched from cron sweep
 
 ---
 

@@ -27,12 +27,14 @@ import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
 import { recordSearch } from '../../../lib/searches'
+import { verifyTurnstileToken } from '../../../lib/turnstile'
 import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
   const q       = searchParams.get('q')
   const refresh = searchParams.get('refresh') === '1'
+  const tsToken = searchParams.get('ts')
 
   if (!q) return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
 
@@ -40,12 +42,20 @@ export async function GET(req: Request): Promise<Response> {
   if (!query) return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query', 422)
 
   const { env, ctx } = getCloudflareContext()
+  const typedEnv = env as unknown as Env
+
   const ip =
     req.headers.get('CF-Connecting-IP') ??
     req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
     'unknown'
 
-  const rl = await checkRateLimit(ip, (env as unknown as Env).KV)
+  // ── Turnstile verification ─────────────────────────────────────────────────
+  const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
+  if (!ts.success) {
+    return errorResponse(ErrorCode.RATE_LIMITED, `bot challenge failed: ${ts.reason}`, 403)
+  }
+
+  const rl = await checkRateLimit(ip, typedEnv.KV)
   if (!rl.allowed) {
     return errorResponse(
       ErrorCode.RATE_LIMITED, 'rate limit exceeded', 429,
@@ -83,7 +93,7 @@ export async function GET(req: Request): Promise<Response> {
   ctx.waitUntil(
     (async () => {
       try {
-        const result = await runLookup({ ...query, forceRefresh: refresh }, env as unknown as Env, ctx)
+        const result = await runLookup({ ...query, forceRefresh: refresh }, typedEnv, ctx)
 
         // Frame 1 — everything except vulns
         const { vulns, ...partial } = result
@@ -99,7 +109,7 @@ export async function GET(req: Request): Promise<Response> {
         await writeLine({ type: 'done', data: result.meta })
 
         // Fire-and-forget D1 persistence
-        const db = (env as unknown as Env).DB
+        const db = typedEnv.DB
         if (db) {
           ctx.waitUntil(
             recordSearch(db, query.normalised, query.type, JSON.stringify(result), result.meta.durationMs)

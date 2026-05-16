@@ -70,6 +70,32 @@
 
 ---
 
+## 🔵 Next — post-review priorities
+
+Ordered by impact-to-effort ratio. Based on external architecture review (May 2026).
+
+### 1. Turnstile abuse defense
+- [x] Invisible Turnstile widget on the search form — zero friction, auto-fires on page load
+- [x] Token forwarded as `?ts=` through the redirect to `/host/[query]`
+- [x] `lib/turnstile.ts` — server-side siteverify against Cloudflare's API
+- [x] `/api/lookup` and `/api/stream` both verify token before running lookup; fail-open when `TURNSTILE_SECRET_KEY` is unset (dev/CI safe)
+- [x] Token threaded into `VulnsStream` for the client-side `/api/stream` call
+- [ ] Set secrets: `wrangler secret put TURNSTILE_SECRET_KEY` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Pages env vars
+
+### 2. `/api/admin/health` endpoint
+- [ ] Aggregate breaker states, recent error rates, and KV hit/miss counts into a single health endpoint. The per-response `meta.circuitBreakers` gives per-request signal; this gives operational trending. ~30 min of work, big ops win.
+
+### 3. Threat indicator normalization (`lib/normalize.ts`)
+- [ ] When the same IP/domain appears across multiple feeds (URLhaus + ThreatFox + Feodo), deduplicate into a canonical `ThreatIndicator` shape with provenance, confidence, and first/last seen timestamps. Not a database redesign — a result transformation layer before the response is serialized. Directly differentiating from other OSINT tools.
+
+### 4. Batch lookup proper orchestration
+- [ ] `/api/batch` exists but needs: deduplicated enrichment across queries sharing the same ASN/cert/CVEs, shared cache reuse, and progressive streaming per-item (NDJSON). Analysts rarely investigate one IOC at a time.
+
+### 5. Webhook diff on target re-query
+- [ ] The cron + snapshot infrastructure is already there. The missing piece is a structured diff (ports added/removed, new CVEs, new threat hits) emitted as a typed payload to `WEBHOOK_URL`. Turns saved targets into a real passive monitoring feed.
+
+---
+
 ## ❌ Not building
 
 | Item | Why not |
