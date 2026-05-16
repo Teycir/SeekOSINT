@@ -26,7 +26,7 @@ export function RecentSearches() {
   const [searches, setSearches] = useState<RecentSearch[]>([])
 
   useEffect(() => {
-    fetch('/api/recent')
+    fetch('/api/recent?limit=5')
       .then(r => r.json())
       .then((d: unknown) => setSearches((d as { searches: RecentSearch[] }).searches ?? []))
       .catch(() => {/* silent — no DB in dev is fine */})

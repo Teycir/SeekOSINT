@@ -1,8 +1,8 @@
 /**
  * app/api/recent/route.ts — returns last 10 distinct searches from D1.
  *
- * GET /api/recent          → { searches: RecentSearch[] }
- * GET /api/recent?limit=5  → at most 5 rows
+ * GET /api/recent          → { searches: RecentSearch[] } (default 5)
+ * GET /api/recent?limit=3  → at most 3 rows
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { getRecentSearches } from '../../../lib/searches'
@@ -10,7 +10,7 @@ import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url)
-  const limit = Math.min(Number(searchParams.get('limit') ?? 10), 50)
+  const limit = Math.min(Number(searchParams.get('limit') ?? 5), 50)
 
   try {
     const { env } = getCloudflareContext()
