@@ -65,9 +65,11 @@ export interface ThreatIndicator {
 
 /** Deduplicate, lowercase and sort an array of strings. */
 function dedup(arr: (string | null | undefined)[]): string[] {
-  return [...new Set(arr.filter((s): s is string => typeof s === 'string' && s.length > 0))]
-    .map(s => s.toLowerCase())
-    .sort()
+  return [...new Set(
+    arr
+      .filter((s): s is string => typeof s === 'string' && s.length > 0)
+      .map(s => s.toLowerCase()),
+  )].sort()
 }
 
 /** Return the earlier of two ISO strings, or whichever is non-null. */
