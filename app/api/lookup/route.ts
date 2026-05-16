@@ -25,15 +25,10 @@ export async function GET(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
   }
 
-  const query = parseQuery(q)
-  if (!query) {
-    return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query — provide a valid IPv4, IPv6, domain, or ASN', 422)
-  }
-
   const { env, ctx } = getCloudflareContext()
   const typedEnv = env as unknown as Env
 
-  // ── Turnstile verification ──────────────────────────────────────────────────
+  // ── Turnstile verification (before parseQuery — prevents format-oracle leakage) ──
   const ip =
     req.headers.get('CF-Connecting-IP') ??
     req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
@@ -42,6 +37,11 @@ export async function GET(req: Request): Promise<Response> {
   const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
   if (!ts.success) {
     return errorResponse(ErrorCode.RATE_LIMITED, `bot challenge failed: ${ts.reason}`, 403)
+  }
+
+  const query = parseQuery(q)
+  if (!query) {
+    return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query — provide a valid IPv4, IPv6, domain, or ASN', 422)
   }
 
   // ── Per-IP rate limiting ────────────────────────────────────────────────────

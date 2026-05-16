@@ -40,11 +40,72 @@ describe('parseQuery', () => {
     expect(parseQuery('1.2.3')).toBeNull()
   })
 
+  it('rejects IPv4 with leading zeros (ambiguous / RFC 6943)', () => {
+    expect(parseQuery('01.2.3.4')).toBeNull()
+    expect(parseQuery('01.002.003.004')).toBeNull()
+    expect(parseQuery('192.168.001.001')).toBeNull()
+  })
+
+  it('accepts single-zero octets (not leading zeros)', () => {
+    expect(parseQuery('0.0.0.0')).not.toBeNull()
+    expect(parseQuery('10.0.0.0')).not.toBeNull()
+    expect(parseQuery('192.168.1.0')).not.toBeNull()
+  })
+
   // ── IPv6 ────────────────────────────────────────────────────────────────
   it('parses a compressed IPv6 address', () => {
     const q = parseQuery('2001:db8::1')
     expect(q?.type).toBe('ip')
     expect(q?.normalised).toBe('2001:db8::1')
+  })
+
+  it('parses :: (all-zeros address)', () => {
+    const q = parseQuery('::')
+    expect(q?.type).toBe('ip')
+    expect(q?.normalised).toBe('::')
+  })
+
+  it('parses ::1 (loopback)', () => {
+    const q = parseQuery('::1')
+    expect(q?.type).toBe('ip')
+    expect(q?.normalised).toBe('::1')
+  })
+
+  it('parses fe80::1 (link-local)', () => {
+    const q = parseQuery('fe80::1')
+    expect(q?.type).toBe('ip')
+    expect(q?.normalised).toBe('fe80::1')
+  })
+
+  it('parses 2001:4860:4860::8888 (Google DNS)', () => {
+    const q = parseQuery('2001:4860:4860::8888')
+    expect(q?.type).toBe('ip')
+    expect(q?.normalised).toBe('2001:4860:4860::8888')
+  })
+
+  it('parses a full 8-group IPv6 address', () => {
+    const q = parseQuery('2001:0db8:0000:0000:0000:0000:0000:0001')
+    expect(q?.type).toBe('ip')
+  })
+
+  it('rejects IPv6 with zone ID (not supported by OSINT APIs)', () => {
+    expect(parseQuery('fe80::1%eth0')).toBeNull()
+  })
+
+  it('rejects IPv6 with triple colon', () => {
+    expect(parseQuery(':::1')).toBeNull()
+  })
+
+  it('rejects IPv6 with two :: separators', () => {
+    expect(parseQuery('1::2::3')).toBeNull()
+  })
+
+  it('rejects IPv6 with 9 groups and no ::', () => {
+    expect(parseQuery('1:2:3:4:5:6:7:8:9')).toBeNull()
+  })
+
+  it('rejects IPv6 with invalid hex characters', () => {
+    expect(parseQuery('gggg::1')).toBeNull()
   })
 
   // ── ASN ─────────────────────────────────────────────────────────────────

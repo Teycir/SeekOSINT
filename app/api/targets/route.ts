@@ -18,8 +18,12 @@ export async function GET(): Promise<Response> {
     const targets = await listTargets(db)
     return Response.json({ targets })
   } catch (err) {
+    // Surface a structured error with enough detail to diagnose schema issues
+    // without leaking stack traces. Common cause: migration 002 not applied
+    // (result_json / checked_at columns missing from saved_targets).
     console.error('[api/targets] GET failed', err)
-    return errorResponse(ErrorCode.INTERNAL_ERROR, 'internal server error', 500)
+    const message = err instanceof Error ? err.message : 'internal server error'
+    return errorResponse(ErrorCode.INTERNAL_ERROR, message, 500)
   }
 }
 

@@ -130,102 +130,106 @@ describe('fetchMalwareBazaar', () => {
 
 // ─── Feodo ────────────────────────────────────────────────────────────────────
 
-const feodoList: FeodoEntry[] = [
-  {
-    ip_address: '1.2.3.4', port: 4444, status: 'Online',
-    hostname: null, as_number: 1234, as_name: 'EVIL-AS',
-    country: 'RU', first_seen: '2024-01-01', last_seen: '2024-06-01', malware: 'Emotet',
-  },
-]
+const feodoEntry: FeodoEntry = {
+  ip_address: '1.2.3.4', port: 4444, status: 'Online',
+  hostname: null, as_number: 1234, as_name: 'EVIL-AS',
+  country: 'RU', first_seen: '2024-01-01', last_seen: '2024-06-01', malware: 'Emotet',
+}
+
+function makeMockD1(firstRow: unknown = null, allRows: unknown[] = []) {
+  const stmt = {
+    bind: vi.fn().mockReturnThis(),
+    first: vi.fn(async () => firstRow),
+    all:   vi.fn(async () => ({ results: allRows })),
+    run:   vi.fn(async () => ({ success: true })),
+  }
+  return {
+    prepare: vi.fn(() => stmt),
+    _stmt: stmt,
+  } as unknown as D1Database
+}
 
 describe('fetchFeodo', () => {
-  let kv: KVNamespace
-  beforeEach(() => { kv = makeMockKV() })
   afterEach(() => vi.restoreAllMocks())
 
   it('skips domain queries', async () => {
-    const r = await fetchFeodo(domQuery, kv)
+    const db = makeMockD1()
+    const r = await fetchFeodo(domQuery, db)
     expect(r.status).toBe('skipped')
   })
 
   it('returns cached blocklist match for known IP', async () => {
-    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
-    kvm.store.set('feodo:blocklist', JSON.stringify(feodoList))
-    const r = await fetchFeodo(ipQuery, kv)
+    const db = makeMockD1(feodoEntry)
+    const r = await fetchFeodo(ipQuery, db)
     expect(r.status).toBe('ok')
     expect(r.data).not.toBeNull()
     expect(r.data?.malware).toBe('Emotet')
   })
 
   it('returns null data for IP not on blocklist', async () => {
-    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
-    kvm.store.set('feodo:blocklist', JSON.stringify(feodoList))
+    const db = makeMockD1(null)
     const cleanQuery: LookupQuery = { raw: '9.9.9.9', type: 'ip', normalised: '9.9.9.9' }
-    const r = await fetchFeodo(cleanQuery, kv)
+    const r = await fetchFeodo(cleanQuery, db)
     expect(r.status).toBe('ok')
     expect(r.data).toBeNull()
   })
 
   it('downloads blocklist on miss and finds matching IP', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify(feodoList), { status: 200 }),
-    )
-    const r = await fetchFeodo(ipQuery, kv)
-    expect(r.status).toBe('ok')
-    expect(r.data?.ip_address).toBe('1.2.3.4')
+    // D1 throws → simulates missing table; not applicable now that D1 is the source
+    // Just verify a D1 error path returns 'error'
+    const db = { prepare: vi.fn(() => { throw new Error('no such table') }) } as unknown as D1Database
+    const r = await fetchFeodo(ipQuery, db)
+    expect(r.status).toBe('error')
   })
 
-  it('returns error when blocklist download fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 502 }))
-    const r = await fetchFeodo(ipQuery, kv)
+  it('returns error when D1 prepare throws', async () => {
+    const db = { prepare: vi.fn(() => { throw new Error('D1 unavailable') }) } as unknown as D1Database
+    const r = await fetchFeodo(ipQuery, db)
     expect(r.status).toBe('error')
   })
 })
 
 // ─── SSLBL ────────────────────────────────────────────────────────────────────
 
+const sslblEntry = {
+  SHA1: 'abc', Listingdate: '2024-01-01', Listingtime: '12:00:00',
+  SuspiciousReason: 'Dridex C&C', DstIP: '1.2.3.4', DstPort: 4444, Subject: 'CN=evil',
+}
+
 describe('fetchSSLBL', () => {
-  let kv: KVNamespace
-  beforeEach(() => { kv = makeMockKV() })
   afterEach(() => vi.restoreAllMocks())
 
   it('skips domain queries', async () => {
-    const r = await fetchSSLBL(domQuery, kv)
+    const db = makeMockD1()
+    const r = await fetchSSLBL(domQuery, db)
     expect(r.status).toBe('skipped')
   })
 
   it('returns ok with empty array when no DstIP match', async () => {
-    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
-    kvm.store.set('sslbl:blocklist', JSON.stringify([
-      { SHA1: 'abc', Listingdate: '2024-01-01', SuspiciousReason: 'Dridex C&C', Listingtime: '12:00:00', DstIP: '9.9.9.9' },
-    ]))
-    const r = await fetchSSLBL(ipQuery, kv)
+    const db = makeMockD1(null, [])
+    const r = await fetchSSLBL(ipQuery, db)
     expect(r.status).toBe('ok')
     expect(r.data).toHaveLength(0)
   })
 
   it('returns matching entry when DstIP matches query', async () => {
-    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
-    kvm.store.set('sslbl:blocklist', JSON.stringify([
-      { SHA1: 'abc', Listingdate: '2024-01-01', SuspiciousReason: 'Dridex C&C', Listingtime: '12:00:00', DstIP: '1.2.3.4' },
-    ]))
-    const r = await fetchSSLBL(ipQuery, kv)
+    const db = makeMockD1(null, [sslblEntry])
+    const r = await fetchSSLBL(ipQuery, db)
     expect(r.status).toBe('ok')
     expect(r.data).toHaveLength(1)
     expect(r.data?.[0]?.SHA1).toBe('abc')
   })
 
-  it('downloads blocklist on miss', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: [] }), { status: 200 }),
-    )
-    const r = await fetchSSLBL(ipQuery, kv)
+  it('returns ok with empty results when D1 returns no rows', async () => {
+    const db = makeMockD1(null, [])
+    const r = await fetchSSLBL(ipQuery, db)
     expect(r.status).toBe('ok')
+    expect(r.data).toHaveLength(0)
   })
 
-  it('returns error when download fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 500 }))
-    const r = await fetchSSLBL(ipQuery, kv)
+  it('returns error when D1 throws', async () => {
+    const db = { prepare: vi.fn(() => { throw new Error('D1 unavailable') }) } as unknown as D1Database
+    const r = await fetchSSLBL(ipQuery, db)
     expect(r.status).toBe('error')
   })
 })

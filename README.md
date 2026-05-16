@@ -47,6 +47,7 @@ $ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
   - [Table of Contents](#table-of-contents)
   - [What SeekOSINT does](#what-seekosint-does)
   - [Use cases](#use-cases)
+  - [Related Tools](#related-tools)
   - [Architecture overview](#architecture-overview)
   - [Execution model](#execution-model)
   - [Data sources](#data-sources)
@@ -116,6 +117,24 @@ Every source is queried in parallel. A failing source degrades to an "unavailabl
 **Threat Intelligence** — Check C2 infrastructure against five threat feeds in a single query.
 
 **Compliance & Risk** — Profile vendor infrastructure, detect exposed cloud storage, identify shadow IT.
+
+---
+
+## Related Tools
+
+SeekOSINT is part of a privacy-focused security toolkit. Explore the full suite:
+
+| Tool | Description | Live URL |
+|---|---|---|
+| **TimeSeal** | Cryptographic timestamping service — prove document existence at a specific time without revealing content | [timeseal.online](https://timeseal.online) |
+| **SanctumVault** | Zero-knowledge encrypted vault — client-side encryption for sensitive data storage | [sanctumvault.online](https://sanctumvault.online) |
+| **GhostChat** | Ephemeral encrypted messaging — self-destructing conversations with no server logs | [ghost-chat.pages.dev](https://ghost-chat.pages.dev) |
+| **XMRProof** | Monero payment verification — generate cryptographic proofs of XMR transactions | [xmrproof.pages.dev](https://xmrproof.pages.dev) |
+| **GhostReceipt** | Anonymous receipt generation — create verifiable transaction records without identity exposure | [ghostreceipt.pages.dev](https://ghostreceipt.pages.dev) |
+| **SeekOSINT** | Host intelligence aggregator — unified OSINT across 15 sources for IPs, domains, and ASNs | [seekosint.pages.dev](https://seekosint.pages.dev) |
+| **HoneypotScan** | Honeypot detection service — identify decoy systems and avoid false positives in security research | [honeypotscan.pages.dev](https://honeypotscan.pages.dev) |
+
+All tools run on Cloudflare's edge network with privacy-first design principles.
 
 ---
 

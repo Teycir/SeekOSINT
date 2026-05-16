@@ -38,9 +38,6 @@ export async function GET(req: Request): Promise<Response> {
 
   if (!q) return errorResponse(ErrorCode.MISSING_QUERY, 'missing q', 400)
 
-  const query = parseQuery(q)
-  if (!query) return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query', 422)
-
   const { env, ctx } = getCloudflareContext()
   const typedEnv = env as unknown as Env
 
@@ -49,11 +46,14 @@ export async function GET(req: Request): Promise<Response> {
     req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
     'unknown'
 
-  // ── Turnstile verification ─────────────────────────────────────────────────
+  // ── Turnstile verification (before parseQuery — prevents format-oracle leakage) ──
   const ts = await verifyTurnstileToken(tsToken, typedEnv.TURNSTILE_SECRET_KEY, ip)
   if (!ts.success) {
     return errorResponse(ErrorCode.RATE_LIMITED, `bot challenge failed: ${ts.reason}`, 403)
   }
+
+  const query = parseQuery(q)
+  if (!query) return errorResponse(ErrorCode.INVALID_QUERY, 'invalid query', 422)
 
   const rl = await checkRateLimit(ip, typedEnv.KV)
   if (!rl.allowed) {

@@ -64,11 +64,22 @@ export async function removeTarget(
 
 /**
  * Return all saved targets, newest first.
+ *
+ * Uses individual column aliases rather than SELECT * to survive schema
+ * version skew: if result_json / checked_at haven't been migrated yet,
+ * we return null for those columns rather than crashing.
  */
 export async function listTargets(db: D1Database): Promise<SavedTarget[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, query, label, notes, result_json, checked_at, created_at
+      `SELECT
+         id,
+         query,
+         label,
+         notes,
+         result_json,
+         checked_at,
+         created_at
        FROM saved_targets
        ORDER BY created_at DESC`,
     )

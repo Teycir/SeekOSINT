@@ -72,9 +72,12 @@ describe('fetchCVE', () => {
   })
 
   it('returns ok result when NVD responds first', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(nvdResponse), { status: 200 }),
-    )
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (url.toString().includes('nvd.nist.gov'))
+        return new Response(JSON.stringify(nvdResponse), { status: 200 })
+      // CIRCL — make it fail so NVD wins
+      return new Response('', { status: 503 })
+    })
     const r = await fetchCVE(CVE_ID, kv, NVD_KEY)
     expect(r.status).toBe('ok')
     expect(r.data?.id).toBe(CVE_ID)
