@@ -54,15 +54,26 @@ export async function generateMetadata({
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
-async function fetchResult(rawQuery: string, forceRefresh = false): Promise<HostResult | null> {
+type FetchError =
+  | { kind: 'rate-limited'; resetInSeconds: number }
+  | { kind: 'server-busy'; retryAfterSeconds: number }
+  | { kind: 'invalid' }
+  | { kind: 'internal' }
+
+type FetchOutcome = { ok: true; result: HostResult } | { ok: false; error: FetchError }
+
+async function fetchResult(rawQuery: string, forceRefresh = false): Promise<FetchOutcome> {
   try {
     const query = parseQuery(rawQuery)
-    if (!query) return null  // unparseable input — truly invalid, show 404
+    if (!query) return { ok: false, error: { kind: 'invalid' } }
     const { env, ctx } = getCloudflareContext()
-    return await runLookup({ ...query, forceRefresh }, env as unknown as Env, ctx)
-  } catch (err) {
+    const result = await runLookup({ ...query, forceRefresh }, env as unknown as Env, ctx)
+    return { ok: true, result }
+  } catch (err: unknown) {
+    // runLookup is an internal call and doesn't throw HTTP errors — but
+    // preserve the shape so the page can show a generic fallback.
     console.error('[fetchResult] runLookup failed:', err)
-    return null
+    return { ok: false, error: { kind: 'internal' } }
   }
 }
 
@@ -553,9 +564,95 @@ export default async function HostPage({
   const [{ query: rawQuery }, sp] = await Promise.all([params, searchParams])
   const forceRefresh = sp.refresh === '1'
   const tsToken = sp.ts
-  const result = await fetchResult(decodeURIComponent(rawQuery), forceRefresh)
+  const outcome = await fetchResult(decodeURIComponent(rawQuery), forceRefresh)
 
-  if (!result) notFound()
+  // ── Error screens ───────────────────────────────────────────────────────────
+  if (!outcome.ok) {
+    const { error } = outcome
+
+    if (error.kind === 'invalid') notFound()
+
+    if (error.kind === 'server-busy') {
+      return (
+        <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4">
+          <div className="max-w-md w-full rounded-xl border border-amber-800/40 bg-amber-950/20 p-8 text-center space-y-4">
+            <div className="text-3xl">⏳</div>
+            <h1 className="text-lg font-semibold text-amber-300 font-mono">Server busy</h1>
+            <p className="text-sm text-neutral-400">
+              Too many lookups are running simultaneously right now.
+              This protects the {15} upstream sources from being overwhelmed.
+            </p>
+            <p className="text-sm text-amber-400/80 font-mono">
+              Retry in ~{error.retryAfterSeconds}s
+            </p>
+            <a
+              href={`/host/${encodeURIComponent(rawQuery)}`}
+              className="inline-block mt-2 rounded-lg border border-amber-700/50 px-5 py-2
+                         text-sm font-mono text-amber-300 hover:bg-amber-900/30 transition-colors"
+            >
+              Try again
+            </a>
+            <div className="pt-2">
+              <a href="/" className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors">
+                ← back to search
+              </a>
+            </div>
+          </div>
+        </main>
+      )
+    }
+
+    if (error.kind === 'rate-limited') {
+      const resetMins = Math.ceil(error.resetInSeconds / 60)
+      return (
+        <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4">
+          <div className="max-w-md w-full rounded-xl border border-neon-red/30 bg-red-950/20 p-8 text-center space-y-4">
+            <div className="text-3xl">🚦</div>
+            <h1 className="text-lg font-semibold text-neon-red font-mono">Rate limit reached</h1>
+            <p className="text-sm text-neutral-400">
+              You&apos;ve used all 500 lookups for this hour.
+              Your quota resets in approximately <span className="text-white font-mono">{resetMins} minute{resetMins !== 1 ? 's' : ''}</span>.
+            </p>
+            <p className="text-xs text-neutral-600 font-mono">
+              window resets in {error.resetInSeconds}s
+            </p>
+            <div className="pt-2">
+              <a href="/" className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors">
+                ← back to search
+              </a>
+            </div>
+          </div>
+        </main>
+      )
+    }
+
+    // internal error — generic fallback (don't 404, it might be transient)
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4">
+        <div className="max-w-md w-full rounded-xl border border-neutral-800 bg-neutral-900 p-8 text-center space-y-4">
+          <div className="text-3xl">⚡</div>
+          <h1 className="text-lg font-semibold text-neutral-200 font-mono">Lookup failed</h1>
+          <p className="text-sm text-neutral-400">
+            Something went wrong on our end. This is usually transient — please try again.
+          </p>
+          <a
+            href={`/host/${encodeURIComponent(rawQuery)}`}
+            className="inline-block mt-2 rounded-lg border border-neutral-700 px-5 py-2
+                       text-sm font-mono text-neutral-300 hover:bg-neutral-800 transition-colors"
+          >
+            Retry
+          </a>
+          <div className="pt-2">
+            <a href="/" className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors">
+              ← back to search
+            </a>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  const { result } = outcome
 
   return (
     <main className="min-h-screen bg-neutral-950 px-4 pt-14 pb-10 sm:pt-10">

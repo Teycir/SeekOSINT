@@ -6,6 +6,7 @@
  *
  * Categories:
  *   RATE_LIMIT   — per-IP sliding-window rate limiter
+ *   CONCURRENCY  — global parallel-request cap (protects upstream sources)
  *   CIRCUIT_BREAKER — upstream source circuit breaker
  *   CVE          — CVE enrichment limits
  *   GHW          — GrayHatWarfare key-ring size
@@ -17,12 +18,34 @@
 export const RATE_LIMIT = {
   /** Sliding-window duration in seconds (1 hour). */
   WINDOW_SECONDS: 3600,
-  /** Maximum requests per IP per window.
-   *  500 is generous for a legitimate researcher doing multi-host investigations
-   *  while still blocking scrapers. Previous value of 100 was too aggressive. */
+  /**
+   * Maximum requests per IP per window.
+   * 500 is generous for a legitimate researcher doing multi-host investigations
+   * while still blocking scrapers.
+   */
   MAX_REQUESTS: 500,
   /** KV key prefix for rate-limit counters. */
   KV_PREFIX: 'rl:ip:',
+} as const
+
+// ─── Global concurrency limiter ────────────────────────────────────────────────
+
+export const CONCURRENCY = {
+  /**
+   * Maximum number of lookup requests that may run simultaneously across
+   * ALL users. Once this ceiling is hit, new requests receive 429 with a
+   * Retry-After header. Keep this low: a single lookup fans out to ~15
+   * parallel upstream fetches internally.
+   */
+  MAX_PARALLEL: 10,
+  /**
+   * How long (seconds) a concurrency slot is held before it is automatically
+   * released, even if the worker crashes without calling releaseConcurrency().
+   * Must be comfortably longer than the worst-case lookup (NVD can be slow).
+   */
+  SLOT_TTL_SECONDS: 90,
+  /** KV key that stores the current active slot count (plain integer). */
+  KV_KEY: 'concurrency:active',
 } as const
 
 // ─── Circuit breaker ───────────────────────────────────────────────────────────

@@ -23,7 +23,7 @@
  *   :open         – presence means breaker is open          (TTL = 15 min)
  */
 
-import { RATE_LIMIT, CIRCUIT_BREAKER } from './config'
+import { RATE_LIMIT, CIRCUIT_BREAKER, CONCURRENCY } from './config'
 
 // ─── Log sanitization ─────────────────────────────────────────────────────────
 
@@ -294,4 +294,67 @@ export async function resetBreaker(
     kv.delete(failKey(source)),
     kv.delete(openKey(source)),
   ])
+}
+
+// ─── Global concurrency limiter ───────────────────────────────────────────────
+
+const CC_KEY     = CONCURRENCY.KV_KEY
+const CC_MAX     = CONCURRENCY.MAX_PARALLEL
+const CC_TTL     = CONCURRENCY.SLOT_TTL_SECONDS
+
+export interface ConcurrencyResult {
+  /** true → slot acquired, request may proceed */
+  allowed: boolean
+  /** current active count at the time of the check */
+  active: number
+  /** configured ceiling */
+  limit: number
+}
+
+/**
+ * Try to acquire one concurrency slot.
+ * Returns { allowed: true } when a slot is available and atomically increments
+ * the counter.  Returns { allowed: false } when the server is at capacity.
+ *
+ * IMPORTANT: callers MUST call releaseConcurrency() in a finally block to
+ * avoid leaking slots.  The KV TTL is a safety net, not the primary release.
+ */
+export async function acquireConcurrency(kv: KVNamespace): Promise<ConcurrencyResult> {
+  try {
+    const raw    = await kv.get(CC_KEY, 'text')
+    const active = raw ? parseInt(raw, 10) : 0
+
+    if (active >= CC_MAX) {
+      return { allowed: false, active, limit: CC_MAX }
+    }
+
+    // Increment and refresh the safety-net TTL.
+    await kv.put(CC_KEY, String(active + 1), { expirationTtl: CC_TTL })
+    return { allowed: true, active: active + 1, limit: CC_MAX }
+  } catch (err) {
+    // KV failure — fail open so KV downtime doesn't block all users.
+    console.error('[ratelimit] acquireConcurrency KV error, failing open', err)
+    return { allowed: true, active: 0, limit: CC_MAX }
+  }
+}
+
+/**
+ * Release one concurrency slot.  Call this in a finally block after every
+ * successful acquireConcurrency().
+ */
+export async function releaseConcurrency(kv: KVNamespace): Promise<void> {
+  try {
+    const raw    = await kv.get(CC_KEY, 'text')
+    const active = raw ? parseInt(raw, 10) : 0
+    const next   = Math.max(0, active - 1)
+
+    if (next === 0) {
+      await kv.delete(CC_KEY)
+    } else {
+      // Keep the TTL alive; the safety-net window resets on each decrement.
+      await kv.put(CC_KEY, String(next), { expirationTtl: CC_TTL })
+    }
+  } catch (err) {
+    console.error('[ratelimit] releaseConcurrency KV error', err)
+  }
 }

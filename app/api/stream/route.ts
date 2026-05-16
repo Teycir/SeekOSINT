@@ -24,11 +24,12 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
 import { sanitizeQueryParam, validateQueryInput } from '../../../lib/sanitize'
-import { checkRateLimit } from '../../../lib/ratelimit'
+import { checkRateLimit, acquireConcurrency, releaseConcurrency } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
 import { recordSearch } from '../../../lib/searches'
 import { verifyTurnstileToken } from '../../../lib/turnstile'
+import { RATE_LIMIT } from '../../../lib/config'
 import type { Env } from '../../../lib/types'
 
 export async function GET(req: Request): Promise<Response> {
@@ -72,10 +73,26 @@ export async function GET(req: Request): Promise<Response> {
       ErrorCode.RATE_LIMITED, 'rate limit exceeded', 429,
       { resetInSeconds: rl.resetInSeconds },
       {
-        'X-RateLimit-Limit':     '100',
+        'X-RateLimit-Limit':     String(RATE_LIMIT.MAX_REQUESTS),
         'X-RateLimit-Remaining': '0',
         'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
         'Retry-After':           String(rl.resetInSeconds),
+      },
+    )
+  }
+
+  // ── Global concurrency cap ──────────────────────────────────────────────────
+  const cc = await acquireConcurrency(typedEnv.KV)
+  if (!cc.allowed) {
+    return errorResponse(
+      ErrorCode.RATE_LIMITED,
+      'server busy — too many parallel lookups, please retry in a moment',
+      429,
+      { retryAfterSeconds: 5 },
+      {
+        'Retry-After':          '5',
+        'X-Concurrency-Limit':  String(cc.limit),
+        'X-Concurrency-Active': String(cc.active),
       },
     )
   }
@@ -132,6 +149,7 @@ export async function GET(req: Request): Promise<Response> {
         await writeLine({ type: 'error', data: { code: 'INTERNAL_ERROR', message: 'lookup failed' } })
       } finally {
         await writer.close()
+        await releaseConcurrency(typedEnv.KV)
       }
     })(),
   )
@@ -142,7 +160,7 @@ export async function GET(req: Request): Promise<Response> {
       'Transfer-Encoding':     'chunked',
       'X-Content-Type-Options':'nosniff',
       'Cache-Control':         'no-store',
-      'X-RateLimit-Limit':     '100',
+      'X-RateLimit-Limit':     String(RATE_LIMIT.MAX_REQUESTS),
       'X-RateLimit-Remaining': String(rl.remaining),
       'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
     },
