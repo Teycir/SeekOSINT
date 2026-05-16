@@ -133,6 +133,20 @@ export async function POST(req: Request): Promise<Response> {
   const label = typeof body.label === 'string' ? sanitizeLabel(body.label, 100) : null
   const notes = typeof body.notes === 'string' ? sanitizeNotes(body.notes, 500) : null
 
+  // Validate free-text fields for injection (full check, not query-safe subset)
+  if (label) {
+    const labelCheck = validateInput(label)
+    if (!labelCheck.valid) {
+      return errorResponse(ErrorCode.INVALID_QUERY, `invalid label: ${labelCheck.reason}`, 400)
+    }
+  }
+  if (notes) {
+    const notesCheck = validateInput(notes)
+    if (!notesCheck.valid) {
+      return errorResponse(ErrorCode.INVALID_QUERY, `invalid notes: ${notesCheck.reason}`, 400)
+    }
+  }
+
   try {
     const { env } = getCloudflareContext()
     const db = (env as unknown as Env).DB

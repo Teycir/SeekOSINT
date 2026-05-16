@@ -64,8 +64,9 @@ export async function verifyTurnstileToken(
 
     return { success: true }
   } catch (err) {
-    // Network failure verifying — fail open to avoid blocking legitimate users
-    console.error('[turnstile] siteverify error', err)
-    return { success: true }
+    // Network failure verifying — fail CLOSED to prevent bot protection bypass.
+    // A siteverify outage should not silently allow all requests through.
+    console.error('[turnstile] siteverify error — failing closed', err)
+    return { success: false, reason: 'siteverify unreachable' }
   }
 }

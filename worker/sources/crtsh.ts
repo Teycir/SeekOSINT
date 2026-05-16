@@ -9,6 +9,11 @@
  * crt.sh's per-IP rate limiter, which responds with HTML (not JSON) on
  * 429s and would otherwise corrupt the parse step.
  *
+ * When crt.sh returns zero results (rate-limited, HTML body, or genuinely
+ * empty), the results are supplemented by CertSpotter (sslmate.com), which
+ * covers the same CT logs via a different API.  Both result sets are merged
+ * and deduplicated by nameValue so the caller always gets the fullest picture.
+ *
  * Deduplicates by cert id and caps at 500 records total.
  * Domain queries only — IPs and ASNs are skipped.
  *
@@ -19,6 +24,7 @@ import type { CertRecord, LookupQuery, SourceResult } from '../../lib/types'
 import { cacheGet, cachePut, CacheKey, TTL } from '../../lib/cache'
 import { ok, error, skipped } from '../../lib/results'
 import { safeFetch } from '../../lib/ssrf'
+import { fetchCertSpotter } from './certspotter'
 
 const SOURCE = 'crtsh'
 const MAX_RESULTS = 500
@@ -115,6 +121,33 @@ export async function fetchCRTSH(
         serialNumber: cert.serial_number,
       })
       if (data.length >= MAX_RESULTS) break
+    }
+
+    // ── CertSpotter fallback / supplement ─────────────────────────────────
+    // When crt.sh returned nothing (rate-limited, HTML body, or genuinely
+    // empty) pull from CertSpotter so we always surface certificate data.
+    // When crt.sh did return results, CertSpotter is still called to fill
+    // any gaps — results are merged and deduplicated by nameValue.
+    if (data.length < MAX_RESULTS) {
+      try {
+        const spotterResult = await fetchCertSpotter(query, kv)
+        if (
+          spotterResult.status === 'ok' || spotterResult.status === 'cached'
+        ) {
+          for (const cert of spotterResult.data ?? []) {
+            // Deduplicate by nameValue only — CertSpotter uses a different id
+            // namespace from crt.sh, so adding cert.id to seenIds would cause
+            // false exclusions of real crt.sh certs with colliding integer IDs.
+            if (seenName.has(cert.nameValue)) continue
+            seenName.add(cert.nameValue)
+            data.push(cert)
+            if (data.length >= MAX_RESULTS) break
+          }
+        }
+      } catch (spotterErr) {
+        // Non-critical — log and continue with whatever crt.sh returned
+        console.warn(`[${SOURCE}] certspotter supplement failed (non-critical):`, spotterErr)
+      }
     }
 
     await cachePut(kv, cacheKey, data, TTL.CERTS)

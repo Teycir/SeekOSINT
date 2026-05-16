@@ -15,7 +15,11 @@ const ASN_RE = /^as\d+$/i
  * Includes injection detection as defense-in-depth.
  */
 export function parseQuery(raw: string): LookupQuery | null {
-  // Sanitize and validate input first
+  // Sanitize and validate input first.
+  // ORDER MATTERS: sanitizeString strips injection chars (including < > ' ")
+  // before we call .toLowerCase() below. Do not reorder these steps — moving
+  // sanitization after lowercasing would not break anything today, but would
+  // silently remove that guarantee for future callers.
   const sanitized = sanitizeString(raw, 500)
   
   // Check for injection patterns

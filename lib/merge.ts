@@ -22,6 +22,7 @@ import type {
   PassiveDNSRecord,
   BGPViewResult,
   RDAPResult,
+  WhoisResult,
   RobtexResult,
   SSLBLEntry,
   SourceResult,
@@ -44,6 +45,7 @@ interface MergeInput {
     geo:        PromiseSettledResult<SourceResult<IPAPIResult>>
     bgp:        PromiseSettledResult<SourceResult<BGPViewResult>>
     rdap:       PromiseSettledResult<SourceResult<RDAPResult>>
+    whois:      PromiseSettledResult<SourceResult<WhoisResult>>
     certs:      PromiseSettledResult<SourceResult<CertRecord[]>>
     passivedns: PromiseSettledResult<SourceResult<PassiveDNSRecord[]>>
     robtex:     PromiseSettledResult<SourceResult<RobtexResult>>
@@ -93,6 +95,7 @@ export function mergeResults(input: MergeInput): HostResult {
     geo:        unwrapSettled(input.core.geo, 'ipapi'),
     bgp:        unwrapSettled(input.core.bgp, 'bgpview'),
     rdap:       unwrapSettled(input.core.rdap, 'rdap'),
+    whois:      unwrapSettled(input.core.whois, 'whois'),
     certs:      unwrapSettled(input.core.certs, 'crtsh'),
     passivedns: unwrapSettled(input.core.passivedns, 'passivedns'),
     robtex:     unwrapSettled(input.core.robtex, 'robtex'),

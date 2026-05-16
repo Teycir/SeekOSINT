@@ -15,6 +15,7 @@ import { listTargets, updateTargetSnapshot } from '../lib/targets'
 import { runLookup } from './lookup'
 import { parseQuery } from '../lib/validate'
 import { safeJson } from '../lib/results'
+import { safeFetch } from '../lib/ssrf'
 import { diffHostResults, summariseDiff } from '../lib/diff'
 import type { TargetDiff } from '../lib/diff'
 import type { Env, FeodoEntry, HostResult, SSLBLEntry } from '../lib/types'
@@ -54,7 +55,7 @@ async function refreshFeodo(db: D1Database): Promise<void> {
     return
   }
 
-  const res = await fetch(
+  const res = await safeFetch(
     'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
     { signal: AbortSignal.timeout(20000) },
   )
@@ -102,7 +103,7 @@ async function refreshSSLBL(db: D1Database): Promise<void> {
     return
   }
 
-  const res = await fetch(
+  const res = await safeFetch(
     'https://sslbl.abuse.ch/blacklist/sslblacklist.json',
     { signal: AbortSignal.timeout(20000) },
   )
@@ -185,17 +186,20 @@ async function dispatchWebhook(
   webhookUrl: string,
   events:     ChangeEvent[],
 ): Promise<void> {
+  // SSRF validation is handled by safeFetch / validateSSRF (scheme + allowlist
+  // + blocked-host patterns). No manual URL parsing needed here.
+
   try {
     const payload = {
       sentAt: Math.floor(Date.now() / 1000),
       events,
     }
 
-    const res = await fetch(webhookUrl, {
+    const res = await safeFetch(webhookUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
-    })
+    }, { allowArbitraryHost: true })
 
     if (!res.ok) {
       console.error(`[cron] webhook POST failed: HTTP ${res.status}`)

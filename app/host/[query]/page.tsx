@@ -470,6 +470,106 @@ function WaybackSection({ result }: { result: HostResult }) {
   )
 }
 
+function WhoisSection({ result }: { result: HostResult }) {
+  const whois = result.core.whois
+  if (whois.status === 'skipped') return null
+  if (!sourceOk(whois)) return null
+  const d = whois.data
+
+  // Collect contact emails, deduped
+  const emails = [...new Set([
+    d.registrantEmail,
+    d.adminEmail,
+    d.techEmail,
+    d.abuseEmail,
+  ].filter(Boolean) as string[])]
+
+  // Only render if WHOIS adds something beyond what RDAP already shows —
+  // i.e. contact info, registrant name/org, or DNSSEC. Otherwise skip silently.
+  const hasExtraData = d.registrant || d.registrantOrg || emails.length > 0 || d.dnssec || d.rawText
+  if (!hasExtraData) return null
+
+  return (
+    <Card title="WHOIS">
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+        {d.registrant && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Registrant</dt>
+            <dd className="inline-flex items-center gap-1 text-sm">
+              {d.registrant}
+              <CopyButton value={d.registrant} />
+            </dd>
+          </div>
+        )}
+        {d.registrantOrg && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Organisation</dt>
+            <dd className="inline-flex items-center gap-1 text-sm">
+              {d.registrantOrg}
+              <CopyButton value={d.registrantOrg} />
+            </dd>
+          </div>
+        )}
+        {d.registrar && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">Registrar</dt>
+            <dd className="inline-flex items-center gap-1 text-sm">
+              {d.registrar}
+              {d.registrarUrl ? (
+                <a href={d.registrarUrl} target="_blank" rel="noopener noreferrer"
+                   className="text-neutral-500 hover:text-white text-xs font-mono ml-1">↗</a>
+              ) : null}
+            </dd>
+          </div>
+        )}
+        {d.dnssec && (
+          <div>
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-0.5">DNSSEC</dt>
+            <dd>
+              <Badge
+                label={d.dnssec}
+                variant={d.dnssec.toLowerCase().includes('signed') ? 'ok' : 'muted'}
+              />
+            </dd>
+          </div>
+        )}
+        {emails.length > 0 && (
+          <div className="col-span-full">
+            <dt className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Contact emails</dt>
+            <dd className="flex flex-wrap gap-2">
+              {emails.map(email => (
+                <span key={email} className="inline-flex items-center gap-0.5 font-mono text-xs
+                                             bg-neutral-800 rounded px-2 py-0.5">
+                  {email}
+                  <CopyButton value={email} />
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
+        {d.status && d.status.length > 0 && (
+          <div className="col-span-full flex gap-1 flex-wrap">
+            {d.status.map(s => (
+              <Badge key={s} label={s.replace(/ /g, '\u00a0')} variant="muted" />
+            ))}
+          </div>
+        )}
+      </dl>
+      {d.rawText && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-300 select-none">
+            Raw WHOIS text
+          </summary>
+          <pre className="mt-2 max-h-60 overflow-y-auto rounded bg-neutral-950 px-3 py-2
+                          text-xs text-neutral-400 font-mono whitespace-pre-wrap break-all">
+            {d.rawText}
+          </pre>
+        </details>
+      )}
+    </Card>
+  )
+}
+
 function RegistrationSection({ result }: { result: HostResult }) {
   const rdap = result.core.rdap
   if (!sourceOk(rdap)) return null
@@ -688,6 +788,7 @@ export default async function HostPage({
 
         <OverviewSection result={result} />
         <RegistrationSection result={result} />
+        <WhoisSection result={result} />
         <PortsSection result={result} />
         {/* VulnsStream fetches CVE details client-side so NVD latency doesn't
             block the initial paint — geo/ports/threats all SSR above this. */}

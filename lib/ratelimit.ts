@@ -51,6 +51,11 @@ const RL_KV_PREFIX      = RATE_LIMIT.KV_PREFIX
  * Check (and increment) the per-IP counter in KV.
  * Returns { allowed: false } when the limit is exceeded.
  *
+ * NOTE: The read-increment-write sequence is not atomic — concurrent requests
+ * from the same IP may under-count usage, allowing slight quota overruns under
+ * high parallelism. This is acceptable for a best-effort rate limiter; for
+ * strict enforcement migrate to a Durable Object counter.
+ *
  * @param cost  Number of quota slots to consume (default 1). Used by batch
  *              routes to charge the full batch size in one call.
  */
@@ -216,18 +221,19 @@ export async function getAllBreakerStatuses(
 
 /**
  * Call on a successful response from a source.
- * Resets the failure/request window so closed stays closed.
+ * Clears the :open flag so a recovering source re-enters 'closed' state.
+ *
+ * Deliberately does NOT delete the window counters — wiping them on every
+ * success would prevent the breaker from ever tripping on a source that
+ * succeeds occasionally (e.g. 1-in-5 success rate). The counters expire
+ * naturally via their WINDOW_TTL_SECONDS KV TTL.
  */
 export async function recordBreakerSuccess(
   source: string,
   kv: KVNamespace,
 ): Promise<void> {
   try {
-    await Promise.all([
-      kv.delete(reqKey(source)),
-      kv.delete(failKey(source)),
-      kv.delete(openKey(source)),
-    ])
+    await kv.delete(openKey(source))
   } catch (err) {
     console.error(`[ratelimit] recordBreakerSuccess failed for source=${sanitizeForLog(source)}:`, err)
   }
@@ -282,8 +288,9 @@ export async function recordBreakerRequest(
 }
 
 /**
- * Manually reset a circuit breaker — clears open flag and window counters.
- * Called by the admin endpoint.
+ * Manually reset a circuit breaker — clears open flag AND window counters.
+ * Called by the admin endpoint. Unlike recordBreakerSuccess, this wipes all
+ * state so the breaker starts fresh.
  */
 export async function resetBreaker(
   source: string,
@@ -315,6 +322,11 @@ export interface ConcurrencyResult {
  * Try to acquire one concurrency slot.
  * Returns { allowed: true } when a slot is available and atomically increments
  * the counter.  Returns { allowed: false } when the server is at capacity.
+ *
+ * NOTE: Like checkRateLimit, the read-increment-write is not atomic. Under
+ * concurrent Workers the active count may be under-counted, allowing slightly
+ * more than CC_MAX parallel requests. The KV TTL is a safety net. For strict
+ * enforcement, migrate to a Durable Object.
  *
  * IMPORTANT: callers MUST call releaseConcurrency() in a finally block to
  * avoid leaking slots.  The KV TTL is a safety net, not the primary release.

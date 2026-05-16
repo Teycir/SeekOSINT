@@ -47,6 +47,7 @@ $ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
   - [Table of Contents](#table-of-contents)
   - [What SeekOSINT does](#what-seekosint-does)
   - [Use cases](#use-cases)
+  - [Lawful-use policy](#lawful-use-policy)
   - [Related Tools](#related-tools)
   - [Architecture overview](#architecture-overview)
   - [Execution model](#execution-model)
@@ -117,6 +118,39 @@ Every source is queried in parallel. A failing source degrades to an "unavailabl
 **Threat Intelligence** — Check C2 infrastructure against five threat feeds in a single query.
 
 **Compliance & Risk** — Profile vendor infrastructure, detect exposed cloud storage, identify shadow IT.
+
+---
+
+## Lawful-use policy
+
+SeekOSINT is designed for **lawful security research, network operations, and threat intelligence**. By using this tool, you agree to:
+
+**Permitted uses:**
+- Security operations and incident response on networks you own or are authorized to monitor
+- Threat intelligence research and IOC correlation
+- Network troubleshooting and infrastructure auditing within your organization
+- Penetration testing with explicit written authorization from the target organization
+- Academic research and education in cybersecurity
+- Compliance audits and vendor risk assessments with proper authorization
+
+**Prohibited uses:**
+- Unauthorized access, reconnaissance, or attacks against systems you do not own or have explicit permission to test
+- Harassment, stalking, or privacy violations against individuals or organizations
+- Facilitating illegal activities including fraud, identity theft, or cybercrime
+- Circumventing security controls or access restrictions without authorization
+- Violating applicable laws including CFAA (US), Computer Misuse Act (UK), GDPR (EU), or equivalent legislation in your jurisdiction
+
+**Your responsibilities:**
+- Ensure you have proper authorization before querying infrastructure you do not own
+- Respect rate limits and do not abuse the service or upstream data sources
+- Comply with all applicable laws and regulations in your jurisdiction
+- Use the data responsibly and do not weaponize findings without coordinated disclosure
+- Understand that querying a host does not grant permission to access or exploit it
+
+**Disclaimer:**
+The author and contributors assume no liability for misuse of this tool. Users are solely responsible for ensuring their activities comply with applicable laws. Data aggregated from public sources may be incomplete, outdated, or inaccurate — always verify findings through authoritative channels before taking action.
+
+If you discover a vulnerability through SeekOSINT, follow responsible disclosure practices and notify the affected party before public disclosure.
 
 ---
 

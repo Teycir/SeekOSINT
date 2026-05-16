@@ -109,9 +109,14 @@ async function fetchFromNVD(
   kv: KVNamespace,
 ): Promise<CVEDetail> {
   await acquireNVDSlot(kv)
+  // API key is sent as a header rather than a query param to keep it out of
+  // access logs, CDN cache keys, and console.error stack traces.
   const res = await safeFetch(
-    `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${cveId}&apiKey=${apiKey}`,
-    { signal: AbortSignal.timeout(8000) },
+    `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${cveId}`,
+    {
+      headers: { apiKey },
+      signal: AbortSignal.timeout(8000),
+    },
   )
   if (!res.ok) throw new Error(`NVD HTTP ${res.status}`)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -206,7 +211,7 @@ export async function fetchOSV(
   }
 }
 
-// ─── Main CVE fetch — NVD + CIRCL race ───────────────────────────────────────
+// ─── Main CVE fetch — NVD + CIRCL race + OSV supplement ──────────────────────
 
 export async function fetchCVE(
   cveId: string,
@@ -230,7 +235,30 @@ export async function fetchCVE(
           .catch(async (e: unknown) => { await recordBreakerFailure('nvd', kv); throw e })
 
     // Race NVD and CIRCL — whichever responds first wins
-    const detail = await Promise.any([nvdPromise, fetchFromCIRCL(cveId)])
+    let detail = await Promise.any([nvdPromise, fetchFromCIRCL(cveId)])
+
+    // Supplement with OSV when missing CWE or references (before caching)
+    const needsCWE  = !detail.cwe  || detail.cwe.length === 0
+    const needsRefs = !detail.references || detail.references.length === 0
+
+    if (needsCWE || needsRefs) {
+      try {
+        const osvResult = await fetchOSV(cveId, kv)
+        if ((osvResult.status === 'ok' || osvResult.status === 'cached') && osvResult.data) {
+          const merged: CVEDetail = { ...detail }
+          if (needsCWE && osvResult.data.cwe && osvResult.data.cwe.length > 0) {
+            merged.cwe = osvResult.data.cwe
+          }
+          if (needsRefs && osvResult.data.references && osvResult.data.references.length > 0) {
+            merged.references = osvResult.data.references
+          }
+          detail = merged
+        }
+      } catch (err) {
+        // OSV supplement is best-effort — never fail the primary result
+        console.warn(`[nvd] OSV supplement failed for ${cveId}:`, err)
+      }
+    }
 
     await cachePut(kv, cacheKey, detail, TTL.CVE)
     return ok(detail.source, detail)
@@ -243,20 +271,4 @@ export async function fetchCVE(
 
 // Re-export for use in lookup.ts — keeps the import surface clean
 export { fetchOSV as fetchOSVDirect }
-
-/**
- * Fetch CVE from all three sources (NVD/CIRCL + OSV) and return the
- * best-quality result. Used when the orchestrator wants maximum detail.
- */
-export async function fetchCVEFull(
-  cveId: string,
-  kv: KVNamespace,
-  nvdKey: string,
-  forceRefresh = false,
-): Promise<SourceResult<CVEDetail>> {
-  const primary = await fetchCVE(cveId, kv, nvdKey, forceRefresh)
-  return primary
-}
-
-// Expose query-independent lookup for use outside of LookupQuery context
-export { fetchCVEFull as fetchCVEById }
+export { fetchCVE as fetchCVEFull, fetchCVE as fetchCVEById }

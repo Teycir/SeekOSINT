@@ -81,11 +81,11 @@ export async function fetchThreatFox(
   if (cached) return ok(SOURCE, cached, true)
 
   try {
-    const res = await fetch('https://threatfox-api.abuse.ch/api/v1/', {
+    const res = await safeFetch('https://threatfox-api.abuse.ch/api/v1/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Auth-Key': apiKey,          // key goes in HTTP header, not body
+        'Auth-Key': apiKey,
       },
       body: JSON.stringify({
         query: 'search_ioc',

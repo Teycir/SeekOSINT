@@ -84,6 +84,25 @@ export interface RDAPContact {
   org?: string
 }
 
+export interface WhoisResult {
+  domain:           string
+  registrar?:       string
+  registrarUrl?:    string
+  registrant?:      string
+  registrantOrg?:   string
+  registrantEmail?: string
+  adminEmail?:      string
+  techEmail?:       string
+  abuseEmail?:      string
+  created?:         string
+  updated?:         string
+  expires?:         string
+  nameservers?:     string[]
+  dnssec?:          string
+  status?:          string[]
+  rawText?:         string
+}
+
 export interface CertRecord {
   id: number
   issuer: string
@@ -263,6 +282,7 @@ export interface HostResult {
     geo:         SourceResult<IPAPIResult>
     bgp:         SourceResult<BGPViewResult>
     rdap:        SourceResult<RDAPResult>
+    whois:       SourceResult<WhoisResult>
     certs:       SourceResult<CertRecord[]>
     passivedns:  SourceResult<PassiveDNSRecord[]>
     robtex:      SourceResult<RobtexResult>

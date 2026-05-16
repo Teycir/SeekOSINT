@@ -54,10 +54,20 @@ async function getRDAPBaseForIP(
   ip: string,
   kv: KVNamespace,
 ): Promise<string> {
-  let boot = await cacheGet<BootstrapEntry>(kv, CacheKey.rdapBootIP())
+  // Choose bootstrap file based on address family
+  const isIPv6 = ip.includes(':')
+  const bootstrapUrl = isIPv6
+    ? 'https://data.iana.org/rdap/ipv6.json'
+    : 'https://data.iana.org/rdap/ipv4.json'
+  const cacheKey = isIPv6 ? `${CacheKey.rdapBootIP()}:v6` : CacheKey.rdapBootIP()
+  const defaultBase = isIPv6
+    ? 'https://rdap.db.ripe.net/'          // RIPE is the most common IPv6 RIR
+    : 'https://rdap.arin.net/registry/'
+
+  let boot = await cacheGet<BootstrapEntry>(kv, cacheKey)
   if (!boot) {
     try {
-      const res = await safeFetch('https://data.iana.org/rdap/ipv4.json', {
+      const res = await safeFetch(bootstrapUrl, {
         signal: AbortSignal.timeout(8000),
       })
       if (res.ok) {
@@ -67,11 +77,11 @@ async function getRDAPBaseForIP(
             typeof v === 'object' && v !== null && Array.isArray((v as BootstrapEntry).services),
           'rdap-ip-bootstrap',
         )
-        await cachePut(kv, CacheKey.rdapBootIP(), boot, TTL.RDAP)
+        await cachePut(kv, cacheKey, boot, TTL.RDAP)
       }
     } catch (err) {
       console.error('[rdap] getRDAPBaseForIP bootstrap fetch failed:', err)
-      // Fall through to ARIN default
+      // Fall through to default
     }
   }
 
@@ -99,7 +109,7 @@ async function getRDAPBaseForIP(
       }
     }
   }
-  return 'https://rdap.arin.net/registry/'
+  return defaultBase
 }
 
 // ─── Normalisers ─────────────────────────────────────────────────────────────
@@ -122,9 +132,11 @@ function parseContacts(entities: any[]): RDAPContact[] {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normaliseIP(json: any): RDAPResult {
   const cidrBlock = json.cidr0_cidrs?.[0]
+  // cidr0_cidrs entries use v4prefix for IPv4 and v6prefix for IPv6
+  const cidrPrefix = cidrBlock?.v4prefix ?? cidrBlock?.v6prefix
   return {
     ip:          json.startAddress,
-    ...(cidrBlock && { cidr: `${cidrBlock.v4prefix}/${cidrBlock.length}` }),
+    ...(cidrBlock && cidrPrefix !== undefined && { cidr: `${cidrPrefix}/${cidrBlock.length}` }),
     ...(json.name && { networkName: json.name }),
     ...(json.country && { country: json.country }),
     contacts:    parseContacts(json.entities ?? []),

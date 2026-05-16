@@ -1,7 +1,7 @@
 /**
  * lookup.ts — 4-layer execution orchestrator.
  *
- * Layer 1  always runs (Promise.allSettled — 7 sources)
+ * Layer 1  always runs (Promise.allSettled — 8 sources)
  * Layer 2  runs in parallel with Layer 1 (no dependency)
  * Layer 3  fires only when InternetDB returns CVE IDs
  * Layer 4  domain queries only (GHW + Wayback); skipped for IP/ASN
@@ -46,7 +46,9 @@ import { fetchInternetDB } from './sources/internetdb'
 import { fetchIPAPI }      from './sources/ipapi'
 import { fetchBGPView }    from './sources/bgpview'
 import { fetchRDAP }       from './sources/rdap'
+import { fetchWhois }      from './sources/whois'
 import { fetchCRTSH }      from './sources/crtsh'
+import { fetchCertSpotter } from './sources/certspotter'
 import { fetchPassiveDNS } from './sources/passivedns'
 import { fetchRobtex }     from './sources/robtex'
 import {
@@ -57,7 +59,7 @@ import {
   fetchSSLBL,
 } from './sources/abusech'
 import { CVE as CVE_CONFIG, GHW as GHW_CONFIG } from '../lib/config'
-import { fetchCVEFull }       from './sources/nvd'
+import { fetchCVE }           from './sources/nvd'
 import { fetchGHWForQuery }   from './sources/grayhatwarfare'
 import { fetchWayback }       from './sources/wayback'
 
@@ -112,7 +114,7 @@ async function resolveDomainToIP(
 // ─── All source names (must match the strings used inside each fetcher) ────────
 
 const ALL_SOURCES = [
-  'internetdb', 'ipapi', 'bgpview', 'rdap', 'crtsh',
+  'internetdb', 'ipapi', 'bgpview', 'rdap', 'whois', 'crtsh',
   'passivedns', 'robtex',
   'urlhaus', 'threatfox', 'malwarebazaar', 'feodo', 'sslbl',
   'nvd', 'ghw', 'wayback',
@@ -185,7 +187,7 @@ async function fetchCVEsBatched(
     const batch = cveIds.slice(i, i + batchSize)
     const settled = await Promise.allSettled(
       batch.map(id =>
-        withBreaker('nvd', kv, () => fetchCVEFull(id, kv, nvdKey, forceRefresh)),
+        withBreaker('nvd', kv, () => fetchCVE(id, kv, nvdKey, forceRefresh)),
       ),
     )
     results.push(...settled)
@@ -266,11 +268,20 @@ export async function runLookup(
       : null
     const firstPrefix = bgpData?.prefixes?.[0]
     if (firstPrefix) {
-      // e.g. "185.26.182.0/24" → "185.26.182.1"
+      // Derive a representative host IP from the first announced prefix.
+      // Try .1, .2, and .254 in order — .1 is often firewalled or absent
+      // from Shodan on some ASNs, so we attempt a few common host addresses
+      // and use the first one that looks like a real routable host.
+      // For CDN detection purposes any of them will do; we skip CDN detection
+      // entirely for ASN queries (synthetic IPs are never CDN-tagged).
       const network = firstPrefix.split('/')[0]
       if (network) {
         const parts = network.split('.')
-        parts[3] = '1'
+        // Pick the first candidate; CDN detection is skipped for ASN queries
+        // so we don't need InternetDB pre-flight to select among candidates.
+        const candidates = ['1', '2', '254']
+        const lastOctet = candidates[0]
+        parts[3] = lastOctet
         const syntheticIP = parts.join('.')
         asnSyntheticIPQuery = {
           raw: syntheticIP,
@@ -337,6 +348,7 @@ export async function runLookup(
     geoResult,
     bgpResult,
     rdapResult,
+    whoisResult,
     certsResult,
     passivednsResult,
     robtexResult,
@@ -365,8 +377,20 @@ export async function runLookup(
       : withBreaker('bgpview', env.KV, () => fetchBGPView(effectiveIPQuery, env.KV)),
 
     // Domain + IP sources: always run regardless of CDN status
-    withBreaker('rdap',       env.KV, () => fetchRDAP(query, env.KV),       `rdap:domain:${query.normalised}`),
-    withBreaker('crtsh',      env.KV, () => fetchCRTSH(query, env.KV),      `crtsh:${query.normalised}`),
+    withBreaker('rdap',  env.KV, () => fetchRDAP(query, env.KV),  `rdap:domain:${query.normalised}`),
+    withBreaker('whois', env.KV, () => fetchWhois(query, env.KV), `whois:${query.normalised}`),
+    // crtsh: internally supplements with certspotter when crt.sh returns empty.
+    // withBreaker also falls back to stale cache when the breaker is open.
+    // If both crtsh breaker is open AND cache is cold, certspotter runs standalone.
+    withBreaker('crtsh', env.KV, async () => {
+      const crtResult = await fetchCRTSH(query, env.KV)
+      // If crtsh returned an error (not empty-ok), escalate to certspotter directly
+      if (crtResult.status === 'error') {
+        console.warn(`[lookup] crtsh errored — trying certspotter standalone`)
+        return fetchCertSpotter(query, env.KV)
+      }
+      return crtResult
+    }, `crtsh:${query.normalised}`),
     withBreaker('passivedns', env.KV, () => fetchPassiveDNS(query, env.KV, ipQuery), `passivedns:${query.normalised}`),
 
     // Robtex — skip for CDN IPs
@@ -407,6 +431,18 @@ export async function runLookup(
 
   // ── Merge dual threat intel results — prefer the more alarming result ──────
   // If either the IP or domain query shows a hit, that result wins.
+  // Tiebreak: prefer whichever has status 'ok' or 'cached' over 'error'/'skipped'.
+  function preferOk<T>(
+    a: PromiseSettledResult<SourceResult<T>>,
+    b: PromiseSettledResult<SourceResult<T>>,
+  ): PromiseSettledResult<SourceResult<T>> {
+    const aOk = a.status === 'fulfilled' && (a.value.status === 'ok' || a.value.status === 'cached')
+    const bOk = b.status === 'fulfilled' && (b.value.status === 'ok' || b.value.status === 'cached')
+    if (aOk) return a
+    if (bOk) return b
+    return a
+  }
+
   function pickWorstURLhaus(
     a: PromiseSettledResult<SourceResult<URLhausResult>>,
     b: PromiseSettledResult<SourceResult<URLhausResult>>,
@@ -415,7 +451,8 @@ export async function runLookup(
     const dataB = b.status === 'fulfilled' ? (b.value.data as URLhausResult | null) : null
     if (dataA?.query_status === 'is_host') return a
     if (dataB?.query_status === 'is_host') return b
-    return a
+    // Neither is a positive hit — prefer whichever actually succeeded
+    return preferOk(a, b)
   }
 
   function pickWorstThreatFox(
@@ -426,7 +463,9 @@ export async function runLookup(
     const dataB = b.status === 'fulfilled' ? (b.value.data as ThreatFoxResult | null) : null
     const countA = dataA?.data?.length ?? 0
     const countB = dataB?.data?.length ?? 0
-    return countA >= countB ? a : b
+    if (countA !== countB) return countA > countB ? a : b
+    // Equal counts (including 0–0) — prefer whichever actually succeeded
+    return preferOk(a, b)
   }
 
   function pickWorstMB(
@@ -437,7 +476,8 @@ export async function runLookup(
     const dataB = b.status === 'fulfilled' ? (b.value.data as MalwareBazaarResult | null) : null
     if (dataA?.query_status === 'ok') return a
     if (dataB?.query_status === 'ok') return b
-    return a
+    // Neither is a positive hit — prefer whichever actually succeeded
+    return preferOk(a, b)
   }
 
   const urlhausResult       = pickWorstURLhaus(urlhausIPResult as PromiseSettledResult<SourceResult<URLhausResult>>,       urlhausDomainResult as PromiseSettledResult<SourceResult<URLhausResult>>)
@@ -479,6 +519,7 @@ export async function runLookup(
       geo:        geoResult,
       bgp:        bgpResult,
       rdap:       rdapResult,
+      whois:      whoisResult,
       certs:      certsResult,
       passivedns: passivednsResult,
       robtex:     robtexResult,

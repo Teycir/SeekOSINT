@@ -129,6 +129,67 @@ describe('fetchCVE', () => {
     await fetchCVE(CVE_ID, kv, NVD_KEY)
     expect(kvm.put).toHaveBeenCalled()
   })
+
+  it('supplements NVD result with OSV data before caching', async () => {
+    // NVD returns data without CWE
+    const nvdNoCWE = {
+      vulnerabilities: [{
+        cve: {
+          id: CVE_ID,
+          descriptions: [{ lang: 'en', value: 'Test vuln' }],
+          metrics: { cvssMetricV31: [{ cvssData: { baseScore: 7.5, baseSeverity: 'HIGH' } }] },
+          published: '2021-12-10',
+        },
+      }],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (url.toString().includes('nvd.nist.gov'))
+        return new Response(JSON.stringify(nvdNoCWE), { status: 200 })
+      if (url.toString().includes('osv.dev'))
+        return new Response(JSON.stringify(osvResponse), { status: 200 })
+      return new Response('', { status: 503 })
+    })
+    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
+    const r = await fetchCVE(CVE_ID, kv, NVD_KEY)
+    expect(r.status).toBe('ok')
+    expect(r.data?.cwe).toEqual(['CWE-502'])
+    // Verify the cached version has OSV supplement
+    const cached = kvm.store.get(`nvd:${CVE_ID}`)
+    expect(cached).toBeDefined()
+    const parsed = JSON.parse(cached!)
+    expect(parsed.cwe).toEqual(['CWE-502'])
+  })
+
+  it('cache hit returns OSV-supplemented data on second call', async () => {
+    // First call: NVD without CWE, OSV supplements it
+    const nvdNoCWE = {
+      vulnerabilities: [{
+        cve: {
+          id: CVE_ID,
+          descriptions: [{ lang: 'en', value: 'Test vuln' }],
+          metrics: { cvssMetricV31: [{ cvssData: { baseScore: 7.5, baseSeverity: 'HIGH' } }] },
+          published: '2021-12-10',
+        },
+      }],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (url.toString().includes('nvd.nist.gov'))
+        return new Response(JSON.stringify(nvdNoCWE), { status: 200 })
+      if (url.toString().includes('osv.dev'))
+        return new Response(JSON.stringify(osvResponse), { status: 200 })
+      return new Response('', { status: 503 })
+    })
+    const kvm = kv as unknown as ReturnType<typeof makeMockKV>
+    await fetchCVE(CVE_ID, kv, NVD_KEY)
+    
+    // Second call: should hit cache with OSV data already included
+    vi.clearAllMocks()
+    const spy = vi.spyOn(globalThis, 'fetch')
+    const r2 = await fetchCVE(CVE_ID, kv, NVD_KEY)
+    expect(r2.status).toBe('cached')
+    expect(r2.data?.cwe).toEqual(['CWE-502'])
+    expect(spy).not.toHaveBeenCalled() // No network calls on cache hit
+  })
 })
 
 describe('fetchOSV', () => {

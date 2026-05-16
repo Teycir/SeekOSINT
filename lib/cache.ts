@@ -28,6 +28,7 @@ export const CacheKey = {
   rdapIP:      (ip: string)      => `rdap:ip:${ip}`,
   rdapDomain:  (domain: string)  => `rdap:domain:${domain}`,
   crtsh:       (domain: string)  => `crtsh:${domain}`,
+  whois:       (domain: string)  => `whois:${domain}`,
   passivedns:  (query: string)   => `passivedns:${query}`,
   robtex:      (ip: string)      => `robtex:${ip}`,
   malwarebazaar: (hash: string)   => `malwarebazaar:${hash}`,

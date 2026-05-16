@@ -62,6 +62,15 @@ export class KeyRing {
   }
 
   private exhaustedKey(key: string): string {
-    return `keyring:${this.source}:exhausted:${key}`
+    // Hash the raw key value so it doesn't appear verbatim in KV key names,
+    // which are visible in the Cloudflare dashboard and audit logs.
+    // We use a simple djb2 hash — it's fast, deterministic, and sufficient
+    // for a non-cryptographic KV namespace token.
+    let h = 5381
+    for (let i = 0; i < key.length; i++) {
+      h = ((h << 5) + h) ^ key.charCodeAt(i)
+    }
+    const token = (h >>> 0).toString(16).padStart(8, '0')
+    return `keyring:${this.source}:exhausted:${token}`
   }
 }

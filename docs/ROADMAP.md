@@ -158,3 +158,99 @@ and what each source actually sends to upstream APIs. Ordered by impact on user 
 ### [MEDIUM] 8 · Verify Feodo/SSLBL type guard passes for resolved-IP queries
 - [x] Both sources guard on `query.type !== 'ip'`. The `effectiveIPQuery` constructed post-DNS-resolution does set `type: 'ip'` explicitly, so this *should* work — but warrants a logged confirmation or unit test to ensure the guard isn't tripping on a serialisation edge case in the D1 path.
 - [x] Fix: added tests in `test/risk.test.ts` covering the Feodo/SSLBL path with a synthetic domain→IP resolved query, verifying the scorer correctly processes hits arriving via the resolvedIP path.
+
+
+---
+
+## 🐞 Bug fixes — code review audit (May 2026)
+
+Identified by a full static review of all worker, lib, and API route code. Ordered by severity.
+
+### 🔴 High — fix before next deploy
+
+#### 1 · `dispatchWebhook` bypasses SSRF protections
+- [x] **File:** `worker/cron.ts ~line 210`
+- [x] `fetch(webhookUrl, ...)` is called directly — not via `safeFetch()`. The URL is validated for HTTPS and parseability, but is never checked against `BLOCKED_HOST_PATTERNS`.
+- [x] **Fix:** added `allowArbitraryHost` option to `safeFetch`/`validateSSRF` — skips the static allowlist but still enforces `BLOCKED_HOST_PATTERNS`. `dispatchWebhook` now uses `safeFetch(..., { allowArbitraryHost: true })`. Manual URL parsing removed.
+
+#### 2 · Turnstile fails open on network errors
+- [x] **File:** `lib/turnstile.ts`
+- [x] When the siteverify endpoint is unreachable, `verifyTurnstileToken` returns `{ success: true }`, completely disabling bot protection during any network partition or attack against `challenges.cloudflare.com`.
+- [x] **Fix:** catch block now returns `{ success: false, reason: 'siteverify unreachable' }` — fails closed.
+
+---
+
+### 🟡 Medium — fix in next maintenance pass
+
+#### 3 · Concurrency counter race condition (non-atomic KV)
+- [x] **File:** `lib/ratelimit.ts` — `acquireConcurrency` / `releaseConcurrency`
+- [x] Both functions do KV `get` → compute → `put` without any atomic compare-and-swap. Concurrent Workers can read the same active count, both increment, and write back the same value — under-counting active slots and allowing more than `CC_MAX` parallel requests.
+- [x] **Fix:** documented the known best-effort limitation with a clear comment. Durable Object migration noted as the path to strict enforcement.
+
+#### 4 · Rate limit counter race condition (non-atomic KV)
+- [x] **File:** `lib/ratelimit.ts` — `checkRateLimit`
+- [x] Same read/increment/write pattern — parallel requests from the same IP can under-count usage, allowing quota to be exceeded. No warning comment exists for callers.
+- [x] **Fix:** added comment marking this as best-effort with Durable Object noted as the strict alternative.
+
+#### 5 · `fetchCVEFull` never calls OSV — enrichment is dead code
+- [x] **File:** `worker/sources/nvd.ts`
+- [x] `fetchCVEFull` is documented as calling NVD/CIRCL *and* OSV for "maximum detail", but its body only calls `fetchCVE` and returns. `fetchOSV` is exported but never wired into the batch enrichment path (`fetchCVEsBatched` in `lookup.ts`).
+- [x] **Fix:** `fetchCVEFull` now calls `fetchOSV` and merges its `cwe`/`references` into the primary result when those fields are absent. OSV failure is best-effort and never fails the primary result.
+
+#### 6 · NVD API key exposed in URL query string
+- [x] **File:** `worker/sources/nvd.ts ~line 108`
+- [x] `apiKey` is appended as a query parameter: `...?cveId=${cveId}&apiKey=${apiKey}`. Keys in query strings appear in Cloudflare access logs, `console.error` traces, and any CDN that caches by URL.
+- [x] **Fix:** key moved to `apiKey` request header. URL now contains only `?cveId=`.
+
+#### 7 · `recordBreakerSuccess` resets full failure window — breaker never trips on mixed results
+- [x] **File:** `lib/ratelimit.ts` — `recordBreakerSuccess`
+- [x] A single successful call deletes both `window_reqs` and `window_fails`. A source that fails 80% of the time will never trip its breaker if one in five requests succeeds — the window is perpetually wiped.
+- [x] **Fix:** `recordBreakerSuccess` now only deletes the `:open` flag. Window counters expire naturally via their TTL. `resetBreaker` (admin endpoint) still wipes everything as before.
+
+---
+
+### 🟠 Logic / correctness bugs
+
+#### 8 · ASN synthetic IP always uses `.1`, may always 404 in InternetDB
+- [x] **File:** `worker/lookup.ts`
+- [x] `parts[3] = '1'` constructs a representative IP (e.g. `185.26.182.1`) that may be firewalled or simply absent from Shodan, causing CDN detection to silently return `isCDNIP=false` and all IP-based sources to return empty.
+- [x] **Fix:** CDN detection is already gated on `query.type === 'domain'` — ASN synthetic IPs never enter the pre-flight. Added comment explaining this and documented the candidate host list (`.1`, `.2`, `.254`) for future improvement.
+
+#### 9 · `pickWorstURLhaus` / `pickWorstMB` return error over clean `ok` result
+- [x] **File:** `worker/lookup.ts` — `pickWorstURLhaus`, `pickWorstMB`
+- [x] When neither result is a positive hit, both functions `return a` unconditionally. If `a` (the IP-path result) has `status: 'error'` and `b` (the domain-path result) has `status: 'ok'`, the error is returned and the clean domain result is discarded.
+- [x] **Fix:** added `preferOk()` helper. All three `pickWorst*` functions now fall back to it when neither result is a positive hit — always returning the `ok`/`cached` result over an `error`.
+
+#### 10 · IPv6 RDAP bootstrap not fetched — all IPv6 defaults to ARIN
+- [x] **File:** `worker/sources/rdap.ts` — `getRDAPBaseForIP`
+- [x] Only `ipv4.json` is fetched from IANA bootstrap. IPv6 addresses fall through to `https://rdap.arin.net/registry/`, returning wrong or empty RDAP data for RIPE, APNIC, etc.
+- [x] **Fix:** `getRDAPBaseForIP` now detects IPv6 input (`ip.includes(':')`) and fetches `ipv6.json` with a separate cache key. Default fallback for IPv6 is RIPE (`rdap.db.ripe.net`) instead of ARIN.
+
+#### 11 · Cross-source `id` deduplication causes false cert exclusions in `crtsh`
+- [x] **File:** `worker/sources/crtsh.ts`
+- [x] `seenIds.add(cert.id)` is applied to CertSpotter records whose integer IDs are in a different namespace from crt.sh IDs. A collision could silently exclude a real crt.sh cert.
+- [x] **Fix:** removed `seenIds.add` from the CertSpotter merge loop. CertSpotter deduplication now uses only `seenName` (`nameValue`), matching the intent.
+
+---
+
+### 🟢 Minor / code quality
+
+#### 12 · `cachedAt`/`fetchedAt` inversion regression test missing
+- [x] **File:** `lib/results.ts`, `test/results.test.ts`
+- [x] A comment notes the fields were previously inverted and "now correct", but there is no test asserting `cached=true → cachedAt present, fetchedAt absent` and vice versa.
+- [x] **Fix:** added two explicit `'key' in r` assertions to `test/results.test.ts`.
+
+#### 13 · Fragile sanitize/toLowerCase order dependency in `parseQuery`
+- [x] **File:** `lib/validate.ts`, `lib/sanitize.ts`
+- [x] `sanitizeQueryParam` strips `<>'"` before `toLowerCase()` is called inside `parseQuery`. If a future code path calls sanitize *after* lowercasing, the strip may be ineffective. The order dependency is undocumented.
+- [x] **Fix:** added an `ORDER MATTERS` comment in `parseQuery` explaining why sanitization must run before `toLowerCase`.
+
+#### 14 · Raw API key value embedded in KV key names (`KeyRing`)
+- [x] **File:** `lib/keyring.ts` — `exhaustedKey`
+- [x] `keyring:ghw:exhausted:<full_api_key>` — the key value appears verbatim in Cloudflare KV key listings and dashboard audit logs.
+- [x] **Fix:** `exhaustedKey` now hashes the key with djb2 → 8-char hex token. Keys appear as `keyring:ghw:exhausted:a3f2c1b0` in KV.
+
+#### 15 · `normaliseIP` in RDAP doesn't handle IPv6 CIDR blocks
+- [x] **File:** `worker/sources/rdap.ts` — `normaliseIP`
+- [x] `cidr0_cidrs?.[0]` is formatted as `${cidrBlock.v4prefix}/${cidrBlock.length}`. For IPv6 blocks, `v4prefix` is undefined, producing `undefined/undefined` in the result.
+- [x] **Fix:** `normaliseIP` now uses `cidrBlock.v4prefix ?? cidrBlock.v6prefix` when constructing the CIDR string.

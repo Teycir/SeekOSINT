@@ -193,21 +193,23 @@ export function diffHostResults(prev: HostResult, next: HostResult): TargetDiff 
 
   // ── Certificate expiry ────────────────────────────────────────────────────
 
-  // Surface certs that are expiring soon (≤ CERT_EXPIRY_WARN_DAYS) or have
-  // just expired. We only check the *next* snapshot — this is a point-in-time
-  // alert, not a transition. Avoids double-alerting on certs already flagged.
-  const prevCertNames = new Set(
+  // Surface certs expiring soon (≤ CERT_EXPIRY_WARN_DAYS) or already expired.
+  // Compare against the previous snapshot's notAfter for the same commonName —
+  // only fire if the cert was NOT already flagged as near-expiry in the previous
+  // check, to avoid re-alerting every hour on a known-expiring cert.
+  const prevCertExpiry = new Map(
     (ok(prev.core.certs) ? prev.core.certs.data : [])
-      ?.map(c => c.commonName) ?? [],
+      ?.map(c => [c.commonName, daysUntil(c.notAfter)]) ?? [],
   )
   const nextCerts = ok(next.core.certs) ? (next.core.certs.data ?? []) : []
   for (const cert of nextCerts) {
     const days = daysUntil(cert.notAfter)
-    // Warn if: expiring within threshold OR newly expired (wasn't flagged before)
     if (days <= CERT_EXPIRY_WARN_DAYS) {
-      // Only emit if this cert wasn't already seen in the prev snapshot
-      // (so we don't re-alert every hour on an already-known near-expiry)
-      if (!prevCertNames.has(cert.commonName)) {
+      const prevDays = prevCertExpiry.get(cert.commonName)
+      // Alert if: cert is new (wasn't in prev), OR was previously outside the
+      // warning window and has now crossed into it (transition alert only).
+      const wasAlreadyWarned = prevDays !== undefined && prevDays <= CERT_EXPIRY_WARN_DAYS
+      if (!wasAlreadyWarned) {
         certExpiry.push({ commonName: cert.commonName, notAfter: cert.notAfter, daysLeft: days })
       }
     }

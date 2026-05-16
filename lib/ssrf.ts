@@ -89,6 +89,12 @@ export const ALLOWED_HOSTS = new Set<string>([
   // crt.sh
   'crt.sh',
 
+  // SSLMate CertSpotter — CT log fallback for when crt.sh is unavailable
+  'certspotter.api.sslmate.com',
+
+  // whoisjson.com — domain WHOIS JSON (free, no auth)
+  'whoisjson.com',
+
   // CIRCL Passive DNS
   'www.circl.lu',
 
@@ -99,6 +105,10 @@ export const ALLOWED_HOSTS = new Set<string>([
   'urlhaus-api.abuse.ch',
   'threatfox-api.abuse.ch',
   'mb-api.abuse.ch',
+
+  // abuse.ch blocklist downloads (Feodo + SSLBL, fetched by cron)
+  'feodotracker.abuse.ch',
+  'sslbl.abuse.ch',
 
   // NVD (NIST)
   'services.nvd.nist.gov',
@@ -207,7 +217,7 @@ export class SSRFError extends Error {
  * Call this before every outbound fetch.  safeFetch() calls it automatically,
  * including on every redirect Location header.
  */
-export function validateSSRF(rawUrl: string, allowRdapDynamic = false): URL {
+export function validateSSRF(rawUrl: string, allowRdapDynamic = false, options?: { allowArbitraryHost?: boolean }): URL {
   let parsed: URL
   try {
     parsed = new URL(rawUrl)
@@ -240,6 +250,13 @@ export function validateSSRF(rawUrl: string, allowRdapDynamic = false): URL {
     if (ok) return parsed
     throw new SSRFError(rawUrl, `RDAP host "${host}" not in dynamic suffix allowlist`)
   }
+
+  // 5. Operator-controlled egress (e.g. WEBHOOK_URL) — allowlist is bypassed
+  //    but BLOCKED_HOST_PATTERNS are still enforced so private/metadata
+  //    endpoints can never be reached.  Only set allowArbitraryHost=true for
+  //    URLs that come from operator-controlled config (env vars), never from
+  //    user-supplied input.
+  if (options?.allowArbitraryHost) return parsed
 
   throw new SSRFError(rawUrl, `host "${host}" not in allowlist`)
 }
@@ -290,12 +307,12 @@ export function validateSSRFResolved(ip: string): void {
 export async function safeFetch(
   url: string,
   init?: RequestInit,
-  options?: { allowRdapDynamic?: boolean },
+  options?: { allowRdapDynamic?: boolean; allowArbitraryHost?: boolean },
 ): Promise<Response> {
   const allowRdapDynamic = options?.allowRdapDynamic ?? false
 
   // Validate the initial URL — throws SSRFError on any violation.
-  validateSSRF(url, allowRdapDynamic)
+  validateSSRF(url, allowRdapDynamic, options)
 
   // Inject a default timeout when the caller has not provided one.
   const signal: AbortSignal =
@@ -330,7 +347,7 @@ export async function safeFetch(
     }
 
     // Full SSRF re-validation on the redirect target.
-    validateSSRF(nextUrl, allowRdapDynamic)
+    validateSSRF(nextUrl, allowRdapDynamic, options)
 
     currentUrl = nextUrl
     hopsLeft--

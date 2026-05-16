@@ -20,6 +20,20 @@ describe('ok()', () => {
     expect(r.cachedAt).toBeTypeOf('number')
     expect(r.fetchedAt).toBeUndefined()
   })
+
+  // Regression: cachedAt and fetchedAt were previously assigned to the wrong branch.
+  // Ensure they are mutually exclusive and appear on the correct status.
+  it('cachedAt is absent on a live fetch result', () => {
+    const r = ok('src', 'live')
+    expect('cachedAt' in r).toBe(false)
+    expect('fetchedAt' in r).toBe(true)
+  })
+
+  it('fetchedAt is absent on a cached result', () => {
+    const r = ok('src', 'cached', true)
+    expect('fetchedAt' in r).toBe(false)
+    expect('cachedAt' in r).toBe(true)
+  })
 })
 
 describe('error()', () => {
