@@ -22,10 +22,10 @@ _Scan the QR code or copy the wallet address above._
 
 > **Unified host intelligence across 15 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
-**Live at:** https://seekyou.workers.dev
+**Live at:** https://seekyou.seekyou.workers.dev
 
 ```
-$ curl "https://seekyou.workers.dev/api/lookup?q=1.1.1.1"
+$ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
 
 {
   "query": { "raw": "1.1.1.1", "type": "ip", "normalised": "1.1.1.1" },
@@ -165,7 +165,7 @@ SeekYou is part of a privacy-focused security toolkit. Explore the full suite:
 | **GhostChat** | Ephemeral encrypted messaging — self-destructing conversations with no server logs | [ghost-chat.pages.dev](https://ghost-chat.pages.dev) |
 | **XMRProof** | Monero payment verification — generate cryptographic proofs of XMR transactions | [xmrproof.pages.dev](https://xmrproof.pages.dev) |
 | **GhostReceipt** | Anonymous receipt generation — create verifiable transaction records without identity exposure | [ghostreceipt.pages.dev](https://ghostreceipt.pages.dev) |
-| **SeekYou** | Host intelligence aggregator — unified OSINT across 15 sources for IPs, domains, and ASNs | [seekyou.workers.dev](https://seekyou.workers.dev) |
+| **SeekYou** | Host intelligence aggregator — unified OSINT across 15 sources for IPs, domains, and ASNs | [seekyou.seekyou.workers.dev](https://seekyou.seekyou.workers.dev) |
 | **HoneypotScan** | Honeypot detection service — identify decoy systems and avoid false positives in security research | [honeypotscan.pages.dev](https://honeypotscan.pages.dev) |
 
 All tools run on Cloudflare's edge network with privacy-first design principles.
@@ -453,7 +453,7 @@ The current state of every breaker is included in `meta.circuitBreakers` on ever
 To manually reset a breaker in production:
 
 ```bash
-curl -X POST https://seekyou.workers.dev/api/admin/reset-breaker \
+curl -X POST https://seekyou.seekyou.workers.dev/api/admin/reset-breaker \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"source": "nvd"}'
