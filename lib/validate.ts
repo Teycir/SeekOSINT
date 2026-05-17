@@ -117,7 +117,7 @@ function isValidIPv4MappedIPv6(s: string): boolean {
   const mapped    = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
   const mappedAlt = /^::ffff:0:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
   const m = mapped.exec(s) ?? mappedAlt.exec(s)
-  if (!m) return false
+  if (!m || !m[1]) return false
   return isValidIPv4(m[1])
 }
 
