@@ -272,9 +272,7 @@ function CertsSection({ result }: { result: HostResult }) {
 
 function DNSSection({ result }: { result: HostResult }) {
   const pdns = result.core.passivedns
-  if (!sourceOk(pdns) || pdns.data.length === 0) {
-    return <Card title="DNS history"><SourceUnavailable source="CIRCL Passive DNS" /></Card>
-  }
+  if (!sourceOk(pdns) || pdns.data.length === 0) return null
   return (
     <Card title={`DNS history (${pdns.data.length} records)`}>
       <div className="overflow-x-auto">
@@ -315,6 +313,10 @@ function ThreatSection({ result }: { result: HostResult }) {
   const indicators = result.normalizedThreats
   const hasThreats = indicators.length > 0
 
+  // Clean target — omit the card entirely so the page stays tight.
+  // The card only appears when there are actual threat indicators to show.
+  if (!hasThreats) return null
+
   const feedLabel: Record<string, string> = {
     urlhaus:       'URLhaus',
     threatfox:     'ThreatFox',
@@ -331,12 +333,9 @@ function ThreatSection({ result }: { result: HostResult }) {
   }
 
   return (
-    <Card title={`Threat intelligence${hasThreats ? ` ⚠ (${indicators.length})` : ''}`}>
-      {!hasThreats ? (
-        <p className="text-xs text-neutral-600">No threat indicators found across all feeds.</p>
-      ) : (
-        <div className="space-y-3">
-          {indicators.map((ind, i) => (
+    <Card title={`Threat intelligence ⚠ (${indicators.length})`}>
+      <div className="space-y-3">
+        {indicators.map((ind, i) => (
             <div
               key={i}
               className="rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-3 space-y-2"
@@ -413,7 +412,6 @@ function ThreatSection({ result }: { result: HostResult }) {
             </div>
           ))}
         </div>
-      )}
     </Card>
   )
 }
