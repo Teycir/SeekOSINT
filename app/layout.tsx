@@ -8,7 +8,7 @@ import { TrustedTypesPolicy } from './components/TrustedTypesPolicy'
 
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'] })
 
-const SITE_URL = 'https://seekosint.pages.dev'
+const SITE_URL = 'https://seekyou.workers.dev'
 const SITE_NAME = 'SeekOSINT'
 const DESCRIPTION =
   'Free OSINT tool — look up any IP address, domain, or ASN and get a ' +
@@ -59,7 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
     name: 'SeekOSINT',
-    url: 'https://seekosint.pages.dev',
+    url: 'https://seekyou.workers.dev',
     description: DESCRIPTION,
     applicationCategory: 'SecurityApplication',
     operatingSystem: 'Any',

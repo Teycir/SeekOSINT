@@ -11,13 +11,13 @@ export const metadata: Metadata = {
     'Learn how to use SeekOSINT — look up any IP address, domain, or ASN and get ' +
     'a comprehensive intelligence report from 15 sources including geolocation, ' +
     'open ports, CVEs, threat feeds, certificate transparency, and passive DNS.',
-  alternates: { canonical: 'https://seekosint.pages.dev/about' },
+  alternates: { canonical: 'https://seekyou.workers.dev/about' },
   openGraph: {
     title: 'How to Use SeekOSINT',
     description:
       'Look up any IP, domain, or ASN. Get threat intel, geolocation, open ports, ' +
       'CVEs, certs, DNS history, and BGP routing — all in one place.',
-    url: 'https://seekosint.pages.dev/about',
+    url: 'https://seekyou.workers.dev/about',
   },
 }
 

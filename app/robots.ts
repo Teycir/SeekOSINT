@@ -10,6 +10,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/host/', '/api/', '/saved'],
       },
     ],
-    sitemap: 'https://seekosint.pages.dev/sitemap.xml',
+    sitemap: 'https://seekyou.workers.dev/sitemap.xml',
   }
 }

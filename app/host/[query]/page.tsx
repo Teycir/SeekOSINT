@@ -28,7 +28,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { query } = await params
   const decoded = decodeURIComponent(query)
-  const url = `https://seekosint.pages.dev/host/${query}`
+  const url = `https://seekyou.workers.dev/host/${query}`
   const description =
     `OSINT intelligence report for ${decoded} — geolocation, open ports, CVEs, ` +
     `threat feeds, certificate transparency, passive DNS, and BGP routing.`

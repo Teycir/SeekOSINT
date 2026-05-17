@@ -10,13 +10,13 @@ export const metadata: Metadata = {
   description:
     'Frequently asked questions about SeekOSINT — IP lookup, domain intelligence, ' +
     'ASN lookup, rate limits, privacy, self-hosting, and data sources.',
-  alternates: { canonical: 'https://seekosint.pages.dev/faq' },
+  alternates: { canonical: 'https://seekyou.workers.dev/faq' },
   openGraph: {
     title: 'SeekOSINT FAQ',
     description:
       'Everything you need to know about SeekOSINT — how it works, what sources ' +
       'it queries, rate limits, privacy, and self-hosting.',
-    url: 'https://seekosint.pages.dev/faq',
+    url: 'https://seekyou.workers.dev/faq',
   },
 }
 
