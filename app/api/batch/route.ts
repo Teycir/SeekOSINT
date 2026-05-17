@@ -2,14 +2,27 @@
  * app/api/batch/route.ts
  *
  * POST /api/batch
- * Body: { queries: string[] }   — max 20, each a valid IP/domain/ASN
+ * Body: { queries: string[], refresh?: boolean }  — max 20 queries
  *
- * Runs all queries concurrently (same as /api/lookup, just fanned out).
- * Rate limiting counts each query against the caller's per-IP quota.
- * Returns partial results — a failed individual lookup comes back as
- * { query, error } rather than tanking the whole batch.
+ * Streams results as NDJSON — each query's result is emitted as soon as
+ * its lookup finishes, so a fast cached hit appears immediately without
+ * waiting for the slowest NVD fetch in the batch.
  *
- * Response: { results: BatchResultItem[], meta: { total, failed, durationMs } }
+ * Wire format (one JSON object per line, Content-Type: application/x-ndjson):
+ *
+ *   {"type":"result","index":0,"query":"8.8.8.8","data":{...HostResult}}
+ *   {"type":"error","index":1,"query":"bad","error":"invalid query — ..."}
+ *   {"type":"done","data":{"total":2,"failed":1,"durationMs":3210}}
+ *
+ * - "index" is the 0-based position of the query in the original array so
+ *   clients can correlate out-of-order results back to their input.
+ * - Failed individual lookups emit "error" frames — they never abort the
+ *   stream or prevent other results from arriving.
+ * - The "done" sentinel is always the last line.
+ *
+ * Rate limiting: the full batch cost (N queries) is charged atomically in
+ * one KV write before the stream opens. A batch that would exceed the
+ * quota is rejected with 429 before any lookup runs.
  */
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { parseQuery } from '../../../lib/validate'
@@ -18,18 +31,17 @@ import { checkRateLimit } from '../../../lib/ratelimit'
 import { runLookup } from '../../../worker/lookup'
 import { recordSearch } from '../../../lib/searches'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
-import type { Env, HostResult } from '../../../lib/types'
+import { extractCallerIp } from '../../../lib/logger'
+import { RATE_LIMIT } from '../../../lib/config'
+import type { Env } from '../../../lib/types'
 
 const MAX_BATCH = 20
 
-interface BatchResultItem {
-  query:   string
-  result?: HostResult
-  error?:  string
-}
-
 export async function POST(req: Request): Promise<Response> {
-  let body: { queries?: unknown }
+  const started = Date.now()
+
+  // ── Parse request body ──────────────────────────────────────────────────────
+  let body: { queries?: unknown; refresh?: unknown }
   try {
     body = await req.json()
   } catch (err) {
@@ -41,14 +53,15 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(ErrorCode.INVALID_QUERY, 'queries must be a non-empty array', 400)
   }
 
-  // Sanitize array input with limits
-  const rawQueries = sanitizeStringArray(body.queries, MAX_BATCH, 500)
+  const forceRefresh = body.refresh === true
 
+  // Sanitize: enforce max batch size and per-item length
+  const rawQueries = sanitizeStringArray(body.queries, MAX_BATCH, 500)
   if (rawQueries.length === 0) {
     return errorResponse(ErrorCode.INVALID_QUERY, 'no valid string queries provided', 400)
   }
-  
-  // Validate each query for injection patterns (query-safe subset)
+
+  // Injection check on every raw string before we do anything else
   for (const q of rawQueries) {
     const validation = validateQueryInput(q)
     if (!validation.valid) {
@@ -58,15 +71,11 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { env, ctx } = await getCloudflareContext({ async: true })
+  const typedEnv = env as unknown as Env
+  const ip = extractCallerIp(req)
 
-  // Rate limit: count each query against the caller's quota
-  const ip =
-    req.headers.get('CF-Connecting-IP') ??
-    req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
-    'unknown'
-
-  const rl = await checkRateLimit(ip, (env as unknown as Env).KV, rawQueries.length)
-
+  // ── Rate limit — charge the full batch cost atomically ──────────────────────
+  const rl = await checkRateLimit(ip, typedEnv.KV, rawQueries.length)
   if (!rl.allowed) {
     return errorResponse(
       ErrorCode.RATE_LIMITED,
@@ -74,7 +83,7 @@ export async function POST(req: Request): Promise<Response> {
       429,
       { resetInSeconds: rl.resetInSeconds },
       {
-        'X-RateLimit-Limit':     '100',
+        'X-RateLimit-Limit':     String(RATE_LIMIT.MAX_REQUESTS),
         'X-RateLimit-Remaining': String(rl.remaining),
         'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
         'Retry-After':           String(rl.resetInSeconds),
@@ -82,53 +91,100 @@ export async function POST(req: Request): Promise<Response> {
     )
   }
 
-  const started = Date.now()
+  // Pre-parse all queries so invalid ones can emit immediate error frames
+  // without spinning up a runLookup worker at all.
+  const parsed = rawQueries.map((raw, index) => ({
+    raw,
+    index,
+    query: parseQuery(raw),
+  }))
 
-  // Parse and validate all queries up front
-  const parsed = rawQueries.map(raw => ({ raw, query: parseQuery(raw) }))
+  // ── Open NDJSON stream ──────────────────────────────────────────────────────
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = writable.getWriter()
+  const enc    = new TextEncoder()
 
-  // Fan out — all queries in parallel, failures are isolated
-  const settled = await Promise.allSettled(
-    parsed.map(async ({ raw, query }): Promise<BatchResultItem> => {
-      if (!query) return { query: raw, error: 'invalid query — must be IPv4, IPv6, domain, or ASN' }
+  function writeLine(obj: unknown): Promise<void> {
+    return writer.write(enc.encode(JSON.stringify(obj) + '\n'))
+  }
+
+  // Fan out all lookups concurrently. Each one writes its frame immediately
+  // when it settles — the stream delivers results in arrival order, not
+  // input order. The "index" field lets clients re-sort if needed.
+  ctx.waitUntil(
+    (async () => {
+      let failed = 0
+
       try {
-        const result = await runLookup(query, env as unknown as Env, ctx)
-        const db = (env as unknown as Env).DB
-        if (db) {
-          ctx.waitUntil(
-            recordSearch(db, query.normalised, query.type, JSON.stringify(result), result.meta.durationMs)
-              .catch(err => console.error('[api/batch] recordSearch failed', err)),
-          )
-        }
-        return { query: raw, result }
-      } catch (err) {
-        console.error(`[api/batch] lookup failed for ${raw}`, err)
-        return { query: raw, error: 'lookup failed' }
+        // Launch every lookup simultaneously. Each promise resolves by writing
+        // its own frame to the stream as soon as it's ready.
+        await Promise.all(
+          parsed.map(async ({ raw, index, query }) => {
+            // Invalid query → immediate error frame, no lookup needed
+            if (!query) {
+              failed++
+              await writeLine({
+                type:  'error',
+                index,
+                query: raw,
+                error: 'invalid query — must be IPv4, IPv6, domain, or ASN',
+              })
+              return
+            }
+
+            try {
+              const result = await runLookup(
+                { ...query, forceRefresh },
+                typedEnv,
+                ctx,
+              )
+
+              // Non-blocking D1 persistence — fire-and-forget per result
+              if (typedEnv.DB) {
+                ctx.waitUntil(
+                  recordSearch(
+                    typedEnv.DB,
+                    query.normalised,
+                    query.type,
+                    JSON.stringify(result),
+                    result.meta.durationMs,
+                  ).catch(err => console.error(`[api/batch] recordSearch failed for ${raw}`, err)),
+                )
+              }
+
+              await writeLine({ type: 'result', index, query: raw, data: result })
+            } catch (err) {
+              failed++
+              console.error(`[api/batch] lookup failed for ${raw}`, err)
+              await writeLine({ type: 'error', index, query: raw, error: 'lookup failed' })
+            }
+          }),
+        )
+      } finally {
+        // Always emit the done sentinel so clients know the stream is complete,
+        // even if some lookups panicked or were caught above.
+        await writeLine({
+          type: 'done',
+          data: {
+            total:      parsed.length,
+            failed,
+            durationMs: Date.now() - started,
+          },
+        })
+        await writer.close()
       }
-    }),
+    })(),
   )
 
-  const results: BatchResultItem[] = settled.map(s =>
-    s.status === 'fulfilled' ? s.value : { query: '?', error: 'internal error' },
-  )
-
-  const failed = results.filter(r => r.error).length
-
-  return Response.json(
-    {
-      results,
-      meta: {
-        total:      results.length,
-        failed,
-        durationMs: Date.now() - started,
-      },
+  return new Response(readable, {
+    headers: {
+      'Content-Type':           'application/x-ndjson',
+      'Transfer-Encoding':      'chunked',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control':          'no-store',
+      'X-RateLimit-Limit':      String(RATE_LIMIT.MAX_REQUESTS),
+      'X-RateLimit-Remaining':  String(rl.remaining),
+      'X-RateLimit-Reset':      String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
     },
-    {
-      headers: {
-        'X-RateLimit-Limit':     '100',
-        'X-RateLimit-Remaining': String(rl.remaining),
-        'X-RateLimit-Reset':     String(Math.floor(Date.now() / 1000) + rl.resetInSeconds),
-      },
-    },
-  )
+  })
 }

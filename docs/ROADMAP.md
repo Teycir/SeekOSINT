@@ -98,7 +98,7 @@ Ordered by impact-to-effort ratio. Based on external architecture review (May 20
 
 ### 4. Batch lookup proper orchestration
 - [x] `/api/batch` — up to 20 queries in parallel, atomic rate-limit charge, partial failure isolation per-item.
-- [ ] **Progressive NDJSON streaming per-item** — currently waits for all results then returns one JSON blob; analysts working large IOC sets need each result as it completes.
+- [x] **Progressive NDJSON streaming per-item** — each lookup writes its frame to the `TransformStream` as soon as it settles; cached hits appear immediately without waiting for the slowest NVD fetch. Wire format: `{"type":"result","index":N,"query":"...","data":{...HostResult}}` / `{"type":"error",...}` / `{"type":"done",...}`. The `index` field lets clients re-sort out-of-order frames back to original input position. Accepts optional `refresh: true` in body.
 - [ ] **Cross-query deduplicated enrichment** — queries sharing the same ASN/CVE IDs/cert chain could share a single upstream fetch; not yet implemented.
 
 ### 5. Webhook diff on target re-query
