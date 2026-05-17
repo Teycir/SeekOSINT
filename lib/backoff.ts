@@ -66,6 +66,16 @@ export async function withBackoff(
         const retryAfterMs = retryAfterHeader
           ? parseFloat(retryAfterHeader) * 1000   // header is in seconds
           : NaN
+        // RFC 7231 allows Retry-After to be either a delay-in-seconds or an
+        // HTTP-date string.  parseFloat on an HTTP-date returns NaN, which
+        // falls back to jitter below — but we log a warning so that unexpected
+        // header formats are visible in Cloudflare logs without breaking behaviour.
+        if (retryAfterHeader && !Number.isFinite(retryAfterMs)) {
+          console.warn(
+            `[${source}] Retry-After header present but not parseable as seconds: ` +
+            `"${retryAfterHeader}" — falling back to jitter`,
+          )
+        }
         const delay = Number.isFinite(retryAfterMs) && retryAfterMs > 0
           ? Math.min(retryAfterMs, maxDelayMs)
           : jitteredDelay(attempt, baseDelayMs, maxDelayMs)

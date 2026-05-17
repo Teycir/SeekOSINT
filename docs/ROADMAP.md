@@ -1,6 +1,6 @@
 # SeekYou — Roadmap
 
-> Last updated: 16 May 2026 (pipeline logic audit added)
+> Last updated: 17 May 2026 (static analysis bug audit added)
 
 ---
 
@@ -254,3 +254,74 @@ Identified by a full static review of all worker, lib, and API route code. Order
 - [x] **File:** `worker/sources/rdap.ts` — `normaliseIP`
 - [x] `cidr0_cidrs?.[0]` is formatted as `${cidrBlock.v4prefix}/${cidrBlock.length}`. For IPv6 blocks, `v4prefix` is undefined, producing `undefined/undefined` in the result.
 - [x] **Fix:** `normaliseIP` now uses `cidrBlock.v4prefix ?? cidrBlock.v6prefix` when constructing the CIDR string.
+
+---
+
+## 🐞 Bug fixes — static analysis audit (17 May 2026)
+
+Identified by full static review of `worker/`, `lib/`, and `app/api/` after the pipeline logic audit. Ordered by severity.
+
+### 🔴 High — fix before next deploy
+
+#### 1 · `preferOk` discards domain-path threat hit when both paths succeed
+- [x] **File:** `worker/lookup.ts` — `preferOk()`
+- [x] When the IP-path and domain-path for URLhaus/ThreatFox/MalwareBazaar both return `ok`, `preferOk` always returns `a` (the IP path). A domain listed as malicious while its resolved IP is clean will silently get a clean result.
+- [x] **Fix:** `preferOk` now falls through to `bUsable ? b : a` in the both-ok case, always preferring the domain path (`b`) rather than the IP path.
+
+#### 2 · `pickWorstThreatFox` drops domain-path IOCs when counts are equal
+- [x] **File:** `worker/lookup.ts` — `pickWorstThreatFox()`
+- [x] When both paths return equal IOC counts (e.g. 2 each), `preferOk` returns `a` and the domain-path IOCs are never merged in. A target with different IOCs on each path loses half its results.
+- [x] **Fix:** when both results are `ok` and have equal non-zero counts, `data.data` arrays are merged and deduplicated by `id`, returning a synthetic `SourceResult` containing the union.
+
+#### 3 · crtsh breaker-open + cache-cold certspotter fallback never updates breaker counters
+- [x] **File:** `worker/lookup.ts` — inline IIFE for `certs`
+- [x] When crtsh breaker is open and KV cache is cold, `fetchCertSpotter` is called standalone and its result is re-labelled `source: 'crtsh'`. Neither `recordBreakerSuccess` nor `recordBreakerFailure` is called for `'crtsh'`, so the breaker can never recover via a certspotter success — it stays open until the 15-min KV TTL expires.
+- [x] **Fix:** after calling `fetchCertSpotter` in this path, `recordBreakerSuccess('crtsh', env.KV)` on success or `recordBreakerFailure` on error, mirroring the closed/half-open path below.
+
+#### 4 · Rate limiter quota can be exceeded under high parallelism
+- [x] **File:** `lib/ratelimit.ts` — `checkRateLimit()`
+- [x] The read → increment → write sequence is non-atomic. Concurrent Workers handling the same IP each read the same counter value and all write `count + 1`, allowing the effective limit to be multiplied by the parallelism factor (easily 5–10×).
+- [x] **Fix:** prominent NOTE comment added to `checkRateLimit` and `acquireConcurrency` documenting the best-effort nature and the Durable Object migration path for strict enforcement.
+
+---
+
+### 🟡 Medium — fix in next maintenance pass
+
+#### 5 · Cert expiry diff deduplication key is `commonName`, which is not unique
+- [x] **File:** `lib/diff.ts` — cert expiry block
+- [x] `prevCertExpiry` is a `Map` keyed by `cert.commonName`. Multiple certs with the same CN but different serial numbers / expiry dates (e.g. a renewed cert still in CT logs alongside the old one) collide — the Map keeps only the last entry. A renewed cert with a new `notAfter` may appear to have already been warned about, silently suppressing the alert.
+- [x] **Fix:** Map is now keyed by `cert.serialNumber || \`${cert.commonName}::${cert.notAfter}\`` so each distinct certificate lifetime is tracked independently.
+
+#### 6 · `sanitizeLabel` allows bare `'` and `"` characters — latent injection risk
+- [x] **File:** `lib/sanitize.ts` — `sanitizeLabel()`
+- [x] The character allowlist explicitly permitted `'` and `"`. All current D1 calls use prepared statements so there is no active injection path, but if a future query ever interpolates a label into SQL, these characters are an injection vector.
+- [x] **Fix:** `'` and `"` removed from the allowlist. The regex `[^\w\s\-_.,:;!?()\[\]{}@#$%&+=]` now strips both. Comment documents the rationale.
+
+#### 7 · cron snapshot persistence uses `waitUntil` incorrectly — fragile under early Worker termination
+- [x] **File:** `worker/cron.ts` — target sweep loop
+- [x] Wrapping `await updateTargetSnapshot` inside `ctx.waitUntil` could silently lose snapshot writes if the cron Worker terminated before the deferred task drained.
+- [x] **Fix:** `updateTargetSnapshot` is now called with a direct `await` inside the loop's `try/catch`. `ctx.waitUntil` is reserved only for the fire-and-forget webhook dispatch that must survive past the end of the scheduled handler.
+
+---
+
+### 🟢 Minor / informational
+
+#### 8 · `resolvedDomain` for IP queries comes from InternetDB, not PTR — misleading label
+- [x] **File:** `lib/merge.ts` — `mergeResults()`
+- [x] `HostResult.resolvedDomain` was documented as "PTR/rDNS hostname" but is actually `internetdb.hostnames[0]`, which may be an unrelated CDN hostname indexed by Shodan.
+- [x] **Fix (doc):** TSDoc comment in `mergeResults` updated to accurately describe the Shodan/InternetDB source and note the future PTR improvement.
+
+#### 9 · `KeyRing.exhaustedKey()` — djb2 hash collision could cross-exhaust two API keys
+- [x] **File:** `lib/keyring.ts` — `exhaustedKey()`
+- [x] djb2 on raw key strings: birthday-paradox collision probability ~1.4×10⁻⁶ for 18 keys, but non-zero.
+- [x] **Fix:** `exhaustedKey` now hashes the key's *index* in the array (always a unique small integer) rather than the raw key string. Comment explains the rationale.
+
+#### 10 · `isValidIPv6` rejects IPv4-mapped addresses (`::ffff:x.x.x.x`)
+- [x] **File:** `lib/validate.ts` — `isValidIPv6()`
+- [x] IPv4-mapped IPv6 addresses (RFC 4291 §2.5.5.2) failed validation because `8.8.8.8` is not a valid hex group.
+- [x] **Fix:** `isValidIPv4MappedIPv6()` added; `parseQuery` calls it after `isValidIPv6`. Accepts `::ffff:a.b.c.d` and `::ffff:0:a.b.c.d` forms.
+
+#### 11 · `backoff.ts` — `Retry-After` date-string format silently falls back to jitter with no log
+- [x] **File:** `lib/backoff.ts` — `withBackoff()`
+- [x] RFC 7231 allows `Retry-After` to be a delay-in-seconds or an HTTP-date string. `parseFloat` on an HTTP-date returns `NaN`, which was handled correctly but silently.
+- [x] **Fix:** `console.warn` added when `retryAfterHeader` is truthy but `retryAfterMs` is `NaN`, making unexpected header formats visible in logs without breaking fallback behaviour.
