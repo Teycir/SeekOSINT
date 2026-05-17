@@ -93,17 +93,21 @@ Ordered by impact-to-effort ratio. Based on external architecture review (May 20
 - [x] `GET /api/admin/health` — Bearer-authed, returns breaker states + summary, D1 row counts (total searches, saved targets, last-hour activity), blocklist freshness from KV meta keys
 
 ### 3. Threat indicator normalization (`lib/normalize.ts`)
-- [ ] When the same IP/domain appears across multiple feeds (URLhaus + ThreatFox + Feodo), deduplicate into a canonical `ThreatIndicator` shape with provenance, confidence, and first/last seen timestamps. Not a database redesign — a result transformation layer before the response is serialized. Directly differentiating from other OSINT tools.
+- [x] `lib/normalize.ts` — full implementation: per-feed extractors (URLhaus, ThreatFox, Feodo, SSLBL, MalwareBazaar), IOC deduplication with provenance merging, confidence scoring with per-feed weights (Feodo C2 Online = 95, URLhaus online = 90, ThreatFox = native confidence_level, SSLBL = 80, MalwareBazaar = 85), unified firstSeen/lastSeen across sources, deduplicated tag union, sort by descending confidence.
+- [x] Wired into `mergeResults()` — `normalizedThreats` field populated on every `HostResult`.
 
 ### 4. Batch lookup proper orchestration
-- [ ] `/api/batch` exists but needs: deduplicated enrichment across queries sharing the same ASN/cert/CVEs, shared cache reuse, and progressive streaming per-item (NDJSON). Analysts rarely investigate one IOC at a time.
+- [x] `/api/batch` — up to 20 queries in parallel, atomic rate-limit charge, partial failure isolation per-item.
+- [ ] **Progressive NDJSON streaming per-item** — currently waits for all results then returns one JSON blob; analysts working large IOC sets need each result as it completes.
+- [ ] **Cross-query deduplicated enrichment** — queries sharing the same ASN/CVE IDs/cert chain could share a single upstream fetch; not yet implemented.
 
 ### 5. Webhook diff on target re-query
-- [ ] The cron + snapshot infrastructure is already there. The missing piece is a structured diff (ports added/removed, new CVEs, new threat hits) emitted as a typed payload to `WEBHOOK_URL`. Turns saved targets into a real passive monitoring feed.
+- [x] `worker/cron.ts` calls `diffHostResults` after each re-query, packages the full typed `TargetDiff` (ports, CVEs, threats, geo, certExpiry, risk delta) plus human-readable `summary` into a `ChangeEvent`, and POSTs `{ sentAt, events[] }` to `WEBHOOK_URL` via `ctx.waitUntil`.
 
 ### 6. Saved target monitoring + risk score
-- [ ] **Change detection** — cron re-queries every saved target, diffs the new `HostResult` against the stored `result_json` snapshot, and persists the delta. Surfaces diffs in a `/targets` dashboard card: new open ports, first threat intel hit, new CVEs, certificate rotation, domain disappearing from live web. The D1 `result_json` column and cron scaffold are already in place — the missing piece is the diff logic and UI.
-- [x] **Risk score** — a single 0–100 number computed from what's already in `HostResult`: open port count + exposure (e.g. port 445/3389 weighted heavily), max CVSS score across all CVEs, threat intel hits (each feed weighted independently), blocklist presence (Feodo/SSLBL = instant ceiling), certificate anomalies (self-signed, near-expiry). Displayed as a colour-coded badge at the top of every result card. No new API calls, no new data — pure aggregation of the existing merge layer output. Turns an 8-card manual read into a one-glance triage signal. (`lib/risk.ts`, `app/components/RiskBadge.tsx`)
+- [x] **Change detection** — cron re-queries all saved targets, diffs against stored `result_json` snapshot with `diffHostResults`, persists fresh snapshot synchronously via direct `await`. Structured log emitted per change.
+- [x] **Risk score** — `computeRiskScore()` in `lib/risk.ts`; `RiskBadge` component in results and `/saved` page. `GET /api/targets` recomputes score from stored snapshot on every response.
+- [x] **Saved targets dashboard** — `/saved` page (`SavedList.tsx`): risk badge, last-checked time, inline label editing, optimistic delete, purge-all with confirm step, cap/threshold banner and progress bar.
 
 ---
 
