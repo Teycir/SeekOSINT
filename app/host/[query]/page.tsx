@@ -736,8 +736,12 @@ export default async function HostPage({
           <div className="text-3xl">⚡</div>
           <h1 className="text-lg font-semibold text-neutral-200 font-mono">Lookup failed</h1>
           <p className="text-sm text-neutral-400">
-            Something went wrong on our end. This is usually transient — please try again.
+            Something went wrong. This is usually caused by one of the following:
           </p>
+          <ul className="text-left text-sm text-neutral-400 space-y-2 bg-neutral-800/50 rounded-lg px-4 py-3">
+            <li className="flex gap-2"><span className="text-amber-400 shrink-0">⚠</span><span><strong className="text-neutral-200">Browser shields</strong> — Brave Shields or an ad blocker is interfering. Disable it for this site and retry.</span></li>
+            <li className="flex gap-2"><span className="text-neutral-500 shrink-0">·</span><span>A network or upstream API timeout — usually resolves on retry.</span></li>
+          </ul>
           <a
             href={`/host/${encodeURIComponent(rawQuery)}`}
             className="inline-block mt-2 rounded-lg border border-neutral-700 px-5 py-2

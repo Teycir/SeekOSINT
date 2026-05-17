@@ -47,7 +47,7 @@ export default function HomePage() {
     }
 
     if (!turnstileToken) {
-      setValidationError('Security check not yet complete — please wait a moment.')
+      setValidationError('Security check not yet complete — wait a moment or disable browser shields if it never completes.')
       return
     }
 
