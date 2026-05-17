@@ -63,6 +63,7 @@ import { CVE as CVE_CONFIG, GHW as GHW_CONFIG } from '../lib/config'
 import { fetchCVE }           from './sources/nvd'
 import { fetchGHWForQuery }   from './sources/grayhatwarfare'
 import { fetchWayback }       from './sources/wayback'
+import type { InflightCache } from '../lib/inflight'
 
 // ─── DNS resolution (domain → IP) ─────────────────────────────────────────────
 
@@ -203,6 +204,7 @@ async function fetchCVEsBatched(
   kv: KVNamespace,
   nvdKey: string,
   forceRefresh: boolean,
+  inflight?: InflightCache,
 ): Promise<PromiseSettledResult<SourceResult<CVEDetail>>[]> {
   const results: PromiseSettledResult<SourceResult<CVEDetail>>[] = []
   const batchSize = CVE_CONFIG.MAX_CONCURRENT  // 5
@@ -211,7 +213,7 @@ async function fetchCVEsBatched(
     const batch = cveIds.slice(i, i + batchSize)
     const settled = await Promise.allSettled(
       batch.map(id =>
-        withBreaker('nvd', kv, () => fetchCVE(id, kv, nvdKey, forceRefresh)),
+        withBreaker('nvd', kv, () => fetchCVE(id, kv, nvdKey, forceRefresh, inflight)),
       ),
     )
     results.push(...settled)
@@ -249,6 +251,7 @@ export async function runLookup(
   query: LookupQuery,
   env: Env,
   ctx: ExecutionContext,
+  inflight?: InflightCache,
 ): Promise<HostResult> {
   const start = Date.now()
 
@@ -601,7 +604,7 @@ export async function runLookup(
   const cveIds = (idbData?.vulns ?? []).slice(0, CVE_CONFIG.MAX_PER_LOOKUP)
 
   const vulns = await fetchCVEsBatched(
-    cveIds, env.KV, env.NVD_KEY, query.forceRefresh ?? false,
+    cveIds, env.KV, env.NVD_KEY, query.forceRefresh ?? false, inflight,
   ) as PromiseSettledResult<SourceResult<CVEDetail>>[]
 
   // ── Layer 4: Bucket recon + Wayback — domain queries only ────────────────

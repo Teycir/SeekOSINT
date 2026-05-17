@@ -57,13 +57,13 @@ export default function HomePage() {
   }
 
   return (
-    <main className="flex min-h-[85vh] flex-col items-center justify-center px-4 gap-6">
+    <main className="flex min-h-[85vh] flex-col items-center justify-center px-4 gap-8 pt-10">
       {/* Background glow */}
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
         <div className="h-[600px] w-[600px] rounded-full bg-neon-red/5 blur-[120px]" />
       </div>
 
-      <div className="relative w-full max-w-xl space-y-8">
+      <div className="relative w-full max-w-xl space-y-10">
         {/* Header */}
         <div className="space-y-2 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-neon-red glow-text pulse-glow font-mono">

@@ -20,6 +20,15 @@
  *   stream or prevent other results from arriving.
  * - The "done" sentinel is always the last line.
  *
+ * Cross-query deduplication
+ * ─────────────────────────
+ * A single InflightCache is created per POST and threaded through every
+ * concurrent runLookup() call.  When two queries share upstream fetches
+ * (same CVE IDs from InternetDB, same BGP ASN prefix…) the second caller
+ * receives the first caller's in-flight Promise rather than starting a new
+ * outbound request.  This cuts both latency and API-quota burn for correlated
+ * IOC sets (e.g. a batch of IPs all belonging to the same Tor exit /24).
+ *
  * Rate limiting: the full batch cost (N queries) is charged atomically in
  * one KV write before the stream opens. A batch that would exceed the
  * quota is rejected with 429 before any lookup runs.
@@ -33,6 +42,7 @@ import { recordSearch } from '../../../lib/searches'
 import { errorResponse, ErrorCode } from '../../../lib/errors'
 import { extractCallerIp } from '../../../lib/logger'
 import { RATE_LIMIT } from '../../../lib/config'
+import { InflightCache } from '../../../lib/inflight'
 import type { Env } from '../../../lib/types'
 
 const MAX_BATCH = 20
@@ -111,16 +121,21 @@ export async function POST(req: Request): Promise<Response> {
   // Fan out all lookups concurrently. Each one writes its frame immediately
   // when it settles — the stream delivers results in arrival order, not
   // input order. The "index" field lets clients re-sort if needed.
+  //
+  // A single InflightCache is shared across all concurrent runLookup() calls
+  // in this batch.  When two queries resolve the same CVE IDs (e.g. two IPs
+  // in the same Tor exit-node /24), the NVD/CIRCL upstream is fetched only
+  // once and the resolved value is shared — cutting both latency and quota
+  // burn on correlated IOC sets.
+  const inflight = new InflightCache()
+
   ctx.waitUntil(
     (async () => {
       let failed = 0
 
       try {
-        // Launch every lookup simultaneously. Each promise resolves by writing
-        // its own frame to the stream as soon as it's ready.
         await Promise.all(
           parsed.map(async ({ raw, index, query }) => {
-            // Invalid query → immediate error frame, no lookup needed
             if (!query) {
               failed++
               await writeLine({
@@ -137,6 +152,7 @@ export async function POST(req: Request): Promise<Response> {
                 { ...query, forceRefresh },
                 typedEnv,
                 ctx,
+                inflight,
               )
 
               // Non-blocking D1 persistence — fire-and-forget per result

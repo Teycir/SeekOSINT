@@ -28,6 +28,7 @@ function allSkipped() {
     geo:        makeSettled(skipped('ipapi')),
     bgp:        makeSettled(skipped('bgpview')),
     rdap:       makeSettled(skipped('rdap')),
+    whois:      makeSettled(skipped('whois')),
     certs:      makeSettled(skipped('crtsh')),
     passivedns: makeSettled(skipped('passivedns')),
     robtex:     makeSettled(skipped('robtex')),
@@ -59,6 +60,7 @@ function baseInput(query: LookupQuery) {
     vulns: [],
     recon: allReconSkipped(),
     durationMs: 100,
+    circuitBreakers: [],
   }
 }
 

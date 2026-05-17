@@ -46,10 +46,10 @@ export function SaveButton({ query, label }: SaveButtonProps) {
   }
 
   const colorClass: Record<State, string> = {
-    idle:   'text-neutral-500 hover:text-white',
-    saving: 'text-neutral-500 cursor-wait',
-    saved:  'text-amber-400',
-    error:  'text-red-400',
+    idle:   'border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-white hover:bg-neutral-800',
+    saving: 'border-neutral-700 text-neutral-500 cursor-wait',
+    saved:  'border-amber-500/50 text-amber-400 bg-amber-500/10',
+    error:  'border-red-500/50 text-red-400',
   }
 
   const tooltipLabel: Record<State, string> = {
@@ -64,7 +64,8 @@ export function SaveButton({ query, label }: SaveButtonProps) {
       <button
         onClick={save}
         disabled={state === 'saving'}
-        className={`text-xs font-mono transition-colors duration-150 ${colorClass[state]}`}
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5
+                    text-sm font-mono transition-all duration-150 ${colorClass[state]}`}
       >
         {text[state]}
       </button>

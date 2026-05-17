@@ -30,6 +30,7 @@ import {
   recordBreakerSuccess,
   recordBreakerFailure,
 } from '../../lib/ratelimit'
+import type { InflightCache } from '../../lib/inflight'
 
 // ─── NVD throttle ─────────────────────────────────────────────────────────────
 
@@ -211,22 +212,16 @@ export async function fetchOSV(
   }
 }
 
-// ─── Main CVE fetch — NVD + CIRCL race + OSV supplement ──────────────────────
+// ─── Core upstream fetch (extracted so inflight.dedupe can wrap it) ───────────
 
-export async function fetchCVE(
+async function _fetchCVEFromUpstream(
   cveId: string,
   kv: KVNamespace,
   nvdKey: string,
-  forceRefresh = false,
+  SOURCE: string,
+  cacheKey: string,
 ): Promise<SourceResult<CVEDetail>> {
-  const SOURCE = 'nvd'
-  const cacheKey = CacheKey.nvd(cveId)
-
-  const cached = await cacheGet<CVEDetail>(kv, cacheKey, forceRefresh)
-  if (cached) return ok(SOURCE, cached, true)
-
   try {
-    // Check circuit breaker — if NVD is tripping, skip straight to CIRCL
     const breakerState = await getBreakerState('nvd', kv)
     const nvdPromise = breakerState === 'open'
       ? Promise.reject(new Error('NVD circuit breaker open — skipping to CIRCL'))
@@ -234,10 +229,8 @@ export async function fetchCVE(
           .then(async d => { await recordBreakerSuccess('nvd', kv); return d })
           .catch(async (e: unknown) => { await recordBreakerFailure('nvd', kv); throw e })
 
-    // Race NVD and CIRCL — whichever responds first wins
     let detail = await Promise.any([nvdPromise, fetchFromCIRCL(cveId)])
 
-    // Supplement with OSV when missing CWE or references (before caching)
     const needsCWE  = !detail.cwe  || detail.cwe.length === 0
     const needsRefs = !detail.references || detail.references.length === 0
 
@@ -255,7 +248,6 @@ export async function fetchCVE(
           detail = merged
         }
       } catch (err) {
-        // OSV supplement is best-effort — never fail the primary result
         console.warn(`[nvd] OSV supplement failed for ${cveId}:`, err)
       }
     }
@@ -263,10 +255,36 @@ export async function fetchCVE(
     await cachePut(kv, cacheKey, detail, TTL.CVE)
     return ok(detail.source, detail)
   } catch (err) {
-    // AggregateError means both NVD and CIRCL failed
     console.error(`[${SOURCE}] both NVD and CIRCL failed for ${cveId}`, err)
     return error(SOURCE, `Both NVD and CIRCL failed: ${String(err)}`)
   }
+}
+
+// ─── Main CVE fetch — NVD + CIRCL race + OSV supplement ──────────────────────
+
+export async function fetchCVE(
+  cveId: string,
+  kv: KVNamespace,
+  nvdKey: string,
+  forceRefresh = false,
+  inflight?: InflightCache,
+): Promise<SourceResult<CVEDetail>> {
+  const SOURCE = 'nvd'
+  const cacheKey = CacheKey.nvd(cveId)
+
+  const cached = await cacheGet<CVEDetail>(kv, cacheKey, forceRefresh)
+  if (cached) return ok(SOURCE, cached, true)
+
+  // Coalesce concurrent batch lookups that share the same CVE ID.
+  // The inflight map is batch-scoped (created once per /api/batch request)
+  // so only lookups within the same batch share a single outbound NVD/CIRCL
+  // fetch — no cross-request contamination.  Single-query /api/lookup calls
+  // pass no inflight map and follow the normal path unchanged.
+  return inflight
+    ? inflight.dedupe(`nvd:${cveId}`, () =>
+        _fetchCVEFromUpstream(cveId, kv, nvdKey, SOURCE, cacheKey),
+      )
+    : _fetchCVEFromUpstream(cveId, kv, nvdKey, SOURCE, cacheKey)
 }
 
 // Re-export for use in lookup.ts — keeps the import surface clean
