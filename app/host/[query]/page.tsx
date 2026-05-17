@@ -17,6 +17,9 @@ import { SaveButton } from '../../components/SaveButton'
 import { VulnsStream } from '../../components/VulnsStream'
 import { RiskBadge } from '../../components/RiskBadge'
 import { RefreshButton } from '../../components/RefreshButton'
+import { getTargetByQuery } from '../../../lib/targets'
+import { diffHostResults } from '../../../lib/diff'
+import type { TargetDiff } from '../../../lib/diff'
 import type { Metadata } from 'next'
 
 // ─── Dynamic metadata ─────────────────────────────────────────────────────────
@@ -142,6 +145,87 @@ function sourceOk<T>(r: SourceResult<T>): r is SourceResult<T> & { data: T } {
   return (r.status === 'ok' || r.status === 'cached') && r.data !== null
 }
 
+/** Days until an ISO date (negative = already past) */
+function daysUntil(isoDate: string): number {
+  return Math.floor((new Date(isoDate).getTime() - Date.now()) / 86_400_000)
+}
+
+// ─── Changes banner ───────────────────────────────────────────────────────────
+
+function ChangesSection({
+  diff,
+  checkedAt,
+}: {
+  diff: TargetDiff
+  checkedAt: number | null
+}) {
+  if (!diff.hasChanges) return null
+
+  const since = checkedAt
+    ? new Date(checkedAt * 1000).toISOString().slice(0, 10)
+    : 'last scan'
+
+  const FEED_LABEL: Record<string, string> = {
+    urlhaus: 'URLhaus', threatfox: 'ThreatFox',
+    feodo: 'Feodo', sslbl: 'SSLBL',
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-700/40 bg-amber-950/15 px-5 py-4 space-y-3">
+      <p className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
+        ⚡ Changes since {since}
+      </p>
+
+      <div className="space-y-1.5 text-xs font-mono">
+
+        {diff.risk && Math.abs(diff.risk.delta) >= 5 && (
+          <div className={`flex items-center gap-2 ${diff.risk.delta > 0 ? 'text-red-400' : 'text-green-400'}`}>
+            <span>{diff.risk.delta > 0 ? '▲' : '▼'} Risk score</span>
+            <span className="text-neutral-500">{diff.risk.prev} → {diff.risk.next}</span>
+          </div>
+        )}
+
+        {diff.ports.map((p, i) => (
+          <div key={i} className={`flex items-center gap-2 ${p.direction === 'opened' ? 'text-red-400' : 'text-green-400'}`}>
+            <span>{p.direction === 'opened' ? '↑' : '↓'} Port {p.port}</span>
+            <span className="text-neutral-600">{p.direction}</span>
+          </div>
+        ))}
+
+        {diff.cves.map((c, i) => (
+          <div key={i} className={`flex items-center gap-2 ${c.direction === 'appeared' ? 'text-red-400' : 'text-green-400'}`}>
+            <span>{c.direction === 'appeared' ? '+' : '−'} {c.id}</span>
+            {c.severity && <span className="text-neutral-500">{c.severity}{c.score !== undefined ? ` ${c.score}` : ''}</span>}
+          </div>
+        ))}
+
+        {diff.threats.map((t, i) => (
+          <div key={i} className={`flex items-center gap-2 ${t.direction === 'appeared' ? 'text-red-400' : 'text-green-400'}`}>
+            <span>{t.direction === 'appeared' ? '+' : '−'} {FEED_LABEL[t.feed] ?? t.feed}</span>
+            {t.detail && <span className="text-neutral-500">{t.detail}</span>}
+          </div>
+        ))}
+
+        {diff.geo.map((g, i) => (
+          <div key={i} className="flex items-center gap-2 text-amber-400">
+            <span>~ {g.field}</span>
+            <span className="text-neutral-500">{g.prev} → {g.next}</span>
+          </div>
+        ))}
+
+        {diff.certExpiry.map((c, i) => (
+          <div key={i} className={`flex items-center gap-2 ${c.daysLeft <= 0 ? 'text-red-400' : 'text-amber-400'}`}>
+            <span>{c.daysLeft <= 0 ? '✕ Cert expired' : '! Cert expiring'}</span>
+            <span className="text-neutral-500">{c.commonName}</span>
+            <span>{c.daysLeft <= 0 ? `(${Math.abs(c.daysLeft)}d ago)` : `(${c.daysLeft}d)`}</span>
+          </div>
+        ))}
+
+      </div>
+    </div>
+  )
+}
+
 // ─── Section renderers ────────────────────────────────────────────────────────
 
 function OverviewSection({ result }: { result: HostResult }) {
@@ -255,16 +339,25 @@ function CertsSection({ result }: { result: HostResult }) {
   return (
     <Card title={`Certificates (${certs.data.length})`}>
       <div className="space-y-2 max-h-80 overflow-y-auto">
-        {certs.data.slice(0, 50).map(c => (
-          <div key={c.id} className="flex items-center justify-between text-xs
-                                     border-b border-neutral-800 pb-1 gap-2">
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="font-mono text-neutral-200 truncate">{c.commonName}</span>
-              <CopyButton value={c.commonName} label="Copy domain" />
+        {certs.data.slice(0, 50).map(c => {
+          const days = daysUntil(c.notAfter)
+          const expiryClass =
+            days < 0   ? 'text-red-400' :
+            days <= 30 ? 'text-amber-400' :
+                         'text-neutral-600'
+          return (
+            <div key={c.id} className="flex items-center justify-between text-xs
+                                       border-b border-neutral-800 pb-1 gap-2">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="font-mono text-neutral-200 truncate">{c.commonName}</span>
+                <CopyButton value={c.commonName} label="Copy domain" />
+              </div>
+              <span className={`shrink-0 font-mono ${expiryClass}`}>
+                {days < 0 ? `expired ${Math.abs(days)}d ago` : `expires ${c.notAfter.slice(0, 10)}`}
+              </span>
             </div>
-            <span className="text-neutral-600 shrink-0">expires {c.notAfter.slice(0, 10)}</span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </Card>
   )
@@ -412,6 +505,65 @@ function ThreatSection({ result }: { result: HostResult }) {
             </div>
           ))}
         </div>
+    </Card>
+  )
+}
+
+function SubdomainsSection({ result }: { result: HostResult }) {
+  const certs = result.core.certs
+  if (!sourceOk(certs) || certs.data.length === 0) return null
+
+  // Only meaningful for domain queries
+  const baseDomain =
+    result.query.type === 'domain' ? result.query.normalised : result.resolvedDomain
+  if (!baseDomain) return null
+
+  // Extract unique subdomains from cert CNs and SANs (nameValue may be \n-separated)
+  const seen = new Set<string>()
+  for (const cert of certs.data) {
+    const names = [
+      cert.commonName,
+      ...cert.nameValue.split('\n'),
+    ]
+    for (const raw of names) {
+      const name = raw.trim().toLowerCase()
+      // Must be a proper subdomain of the base, no wildcards
+      if (
+        name &&
+        name !== baseDomain &&
+        name.endsWith(`.${baseDomain}`) &&
+        !name.includes('*')
+      ) {
+        seen.add(name)
+      }
+    }
+  }
+
+  if (seen.size === 0) return null
+  const sorted = [...seen].sort()
+
+  return (
+    <Card title={`Subdomains (${sorted.length} discovered)`}>
+      <div className="columns-2 sm:columns-3 gap-x-6 max-h-72 overflow-y-auto">
+        {sorted.map(sub => (
+          <div key={sub} className="flex items-center gap-1 break-inside-avoid py-0.5">
+            <a
+              href={`/host/${encodeURIComponent(sub)}`}
+              className="font-mono text-xs text-neutral-300 hover:text-white truncate
+                         transition-colors"
+            >
+              {sub.replace(`.${baseDomain}`, '')}
+              <span className="text-neutral-600">.{baseDomain}</span>
+            </a>
+            <CopyButton value={sub} label="Copy subdomain" />
+          </div>
+        ))}
+      </div>
+      {certs.data.length >= 50 && (
+        <p className="mt-3 text-xs text-neutral-600 italic">
+          Showing subdomains from the first 50 certificates — there may be more.
+        </p>
+      )}
     </Card>
   )
 }
@@ -667,6 +819,27 @@ export default async function HostPage({
   const tsToken      = sp.ts ?? undefined
   const outcome = await fetchResult(decodeURIComponent(rawQuery), forceRefresh)
 
+  // ── Diff against saved snapshot (non-fatal) ─────────────────────────────────
+  let diff:      TargetDiff | null = null
+  let checkedAt: number | null     = null
+
+  if (outcome.ok) {
+    try {
+      const { env } = await getCloudflareContext({ async: true })
+      const saved = await getTargetByQuery(
+        (env as unknown as Env).DB,
+        outcome.result.query.normalised,
+      )
+      if (saved?.result_json) {
+        const prev = JSON.parse(saved.result_json) as HostResult
+        diff      = diffHostResults(prev, outcome.result)
+        checkedAt = saved.checked_at
+      }
+    } catch {
+      // non-fatal — page renders fine without diff
+    }
+  }
+
   // ── Error screens ───────────────────────────────────────────────────────────
   if (!outcome.ok) {
     const { error } = outcome
@@ -791,6 +964,8 @@ export default async function HostPage({
           </div>
         </div>
 
+        {diff && <ChangesSection diff={diff} checkedAt={checkedAt} />}
+
         <OverviewSection result={result} />
         <RegistrationSection result={result} />
         <WhoisSection result={result} />
@@ -805,6 +980,7 @@ export default async function HostPage({
         />
         <ThreatSection result={result} />
         <CertsSection result={result} />
+        <SubdomainsSection result={result} />
         <DNSSection result={result} />
         <BucketsSection result={result} />
         <WaybackSection result={result} />

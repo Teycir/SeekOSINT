@@ -92,6 +92,23 @@ export async function listTargets(db: D1Database): Promise<SavedTarget[]> {
 }
 
 /**
+ * Fetch one target by normalised query string.
+ * Used by the result page to load the previous snapshot for diff rendering.
+ */
+export async function getTargetByQuery(
+  db: D1Database,
+  query: string,
+): Promise<SavedTarget | null> {
+  return db
+    .prepare(
+      `SELECT id, query, label, notes, result_json, checked_at, created_at
+       FROM saved_targets WHERE query = ?`,
+    )
+    .bind(query)
+    .first<SavedTarget>()
+}
+
+/**
  * Fetch one target by id (used by cron jobs before re-running a lookup).
  */
 export async function getTarget(
