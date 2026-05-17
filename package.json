@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pages:build": "opennextjs-cloudflare build",
-    "deploy": "npm run pages:build && wrangler deploy"
+    "deploy": "npm run pages:build && wrangler deploy --config wrangler.jsonc"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.19.10",

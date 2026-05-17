@@ -22,10 +22,10 @@ _Scan the QR code or copy the wallet address above._
 
 > **Unified host intelligence across 15 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
-**Live at:** https://seekosint.pages.dev
+**Live at:** https://seekosint.xingyang292.workers.dev
 
 ```
-$ curl "https://seekosint.pages.dev/api/lookup?q=1.1.1.1"
+$ curl "https://seekosint.xingyang292.workers.dev/api/lookup?q=1.1.1.1"
 
 {
   "query": { "raw": "1.1.1.1", "type": "ip", "normalised": "1.1.1.1" },
