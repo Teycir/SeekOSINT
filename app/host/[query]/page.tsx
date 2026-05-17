@@ -835,8 +835,9 @@ export default async function HostPage({
         diff      = diffHostResults(prev, outcome.result)
         checkedAt = saved.checked_at
       }
-    } catch {
+    } catch (err) {
       // non-fatal — page renders fine without diff
+      console.warn('[HostPage] diff fetch failed (non-fatal):', err)
     }
   }
 

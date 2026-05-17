@@ -132,7 +132,11 @@ export function mergeResults(input: MergeInput): HostResult {
 
   if (query.type === 'ip') {
     resolvedIP = query.normalised
-    // Best effort: grab first hostname from InternetDB
+    // Best effort: use the first hostname from InternetDB.
+    // NOTE: this is NOT a PTR/rDNS lookup — it reflects whatever Shodan has
+    // indexed for this IP, which may be a CDN edge hostname rather than the
+    // true reverse-DNS name.  The HostResult.resolvedDomain field documents
+    // this distinction; a real PTR query is a future improvement.
     const idb = core.internetdb.data
     if (idb && idb.hostnames.length > 0) resolvedDomain = idb.hostnames[0]
   } else if (query.type === 'domain') {

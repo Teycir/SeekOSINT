@@ -36,6 +36,7 @@ export function parseQuery(raw: string): LookupQuery | null {
 
   if (IPV4_RE.test(s) && isValidIPv4(s)) return make(raw, 'ip', s)
   if (isValidIPv6(s))                     return make(raw, 'ip', s)
+  if (isValidIPv4MappedIPv6(s))           return make(raw, 'ip', s)
   if (ASN_RE.test(s))                     return make(raw, 'asn', s)
   if (DOMAIN_RE.test(s))                  return make(raw, 'domain', s)
 
@@ -101,7 +102,26 @@ function isValidIPv6(s: string): boolean {
 }
 
 /**
- * Collect numbered wrangler secrets into an array.
+ * Validate an IPv4-mapped IPv6 address (RFC 4291 §2.5.5.2).
+ * These have the form ::ffff:x.x.x.x or ::ffff:0:x.x.x.x.
+ *
+ * isValidIPv6() correctly rejects these because the IPv4 suffix is not a
+ * valid hex group.  We handle them separately so users can look up
+ * addresses like ::ffff:8.8.8.8 without receiving a 422.
+ *
+ * The SSRF guard (validateSSRFResolved) will still block any private-range
+ * IPv4 suffix (e.g. ::ffff:192.168.1.1) before it reaches any upstream API.
+ */
+function isValidIPv4MappedIPv6(s: string): boolean {
+  // Canonical forms accepted: ::ffff:a.b.c.d  and  ::ffff:0:a.b.c.d
+  const mapped    = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
+  const mappedAlt = /^::ffff:0:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
+  const m = mapped.exec(s) ?? mappedAlt.exec(s)
+  if (!m) return false
+  return isValidIPv4(m[1])
+}
+
+
  * e.g. collectSecrets(env, 'GHW_KEY', 18) → [env.GHW_KEY_1, ..., env.GHW_KEY_18]
  * Filters out undefined/empty values so callers get only bound keys.
  */

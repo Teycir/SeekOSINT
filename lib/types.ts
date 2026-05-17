@@ -269,7 +269,10 @@ export interface HostResult {
   query: LookupQuery
   /** For domain queries: the A record IP DNS resolved to. Null if DNS failed. */
   resolvedIP?: string
-  /** For IP queries: the PTR/rDNS hostname, if available (sourced from InternetDB hostnames). */
+  /** For IP queries: the first hostname from InternetDB (sourced from Shodan).
+   *  NOTE: this is NOT a true PTR/rDNS lookup — it reflects what Shodan has
+   *  indexed and may be a CDN edge hostname.  A real reverse-DNS query is
+   *  a planned future improvement. */
   resolvedDomain?: string
   /** True when a domain query could not be resolved to an IP via DoH.
    *  IP-based sources (geo, ports, threat intel) will all be skipped.

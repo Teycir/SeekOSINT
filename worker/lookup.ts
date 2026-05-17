@@ -431,8 +431,16 @@ export async function runLookup(
         } catch { /* fall through to certspotter */ }
         // Cache cold — run certspotter standalone; surface under 'crtsh' so
         // the UI card renders as normal (the user sees certs, not an error).
+        // Record success/failure against the crtsh breaker so that a run of
+        // successful certspotter fallbacks eventually clears the open state
+        // and the breaker can recover before the 15-min KV TTL expires.
         console.warn('[lookup] crtsh breaker open + cache cold — running certspotter standalone')
         const spotterResult = await fetchCertSpotter(query, env.KV)
+        if (spotterResult.status === 'error') {
+          await recordBreakerFailure('crtsh', env.KV)
+        } else if (spotterResult.status !== 'skipped') {
+          await recordBreakerSuccess('crtsh', env.KV)
+        }
         return { ...spotterResult, source: 'crtsh' }
       }
 
@@ -487,6 +495,12 @@ export async function runLookup(
   // ── Merge dual threat intel results — prefer the more alarming result ──────
   // If either the IP or domain query shows a hit, that result wins.
   // Tiebreak: prefer whichever has status 'ok' or 'cached' over 'error'/'skipped'.
+  //
+  // preferOk is ONLY called when no positive malicious signal was found on
+  // either path — it is a tie-breaker for "which clean/empty result do we show".
+  // When this function is reached, returning either result is equivalent for
+  // risk purposes; we prefer the domain path (b) so that a CDN-blocked IP error
+  // or 'skipped' status never shadows a valid domain-path clean result.
   function preferOk<T>(
     a: PromiseSettledResult<SourceResult<T>>,
     b: PromiseSettledResult<SourceResult<T>>,
@@ -495,9 +509,8 @@ export async function runLookup(
     const bOk = b.status === 'fulfilled' && (b.value.status === 'ok' || b.value.status === 'cached')
     if (aOk && !bOk) return a
     if (bOk && !aOk) return b
-    if (aOk && bOk) return a   // both ok — keep IP path (a) as primary
-    // Neither ok — prefer domain path (b) over IP-path error so a skipped/error
-    // from a CDN-blocked IP doesn't shadow a valid domain-path result.
+    // Both ok, or both non-ok: prefer domain path (b). bUsable handles the
+    // neither-ok case — if b is skipped/error, fall back to a.
     const bUsable = b.status === 'fulfilled' && b.value.status !== 'error'
     return bUsable ? b : a
   }
@@ -508,9 +521,17 @@ export async function runLookup(
   ): PromiseSettledResult<SourceResult<URLhausResult>> {
     const dataA = a.status === 'fulfilled' ? (a.value.data as URLhausResult | null) : null
     const dataB = b.status === 'fulfilled' ? (b.value.data as URLhausResult | null) : null
-    if (dataA?.query_status === 'is_host') return a
-    if (dataB?.query_status === 'is_host') return b
-    // Neither is a positive hit — prefer whichever actually succeeded
+    const aHit = dataA?.query_status === 'is_host'
+    const bHit = dataB?.query_status === 'is_host'
+    // Both paths show a hit — prefer whichever has more associated URLs so we
+    // don't silently drop domain-path URL entries when the IP is also listed.
+    // IP path (a) is the tiebreak when counts are equal.
+    if (aHit && bHit) {
+      return (dataB?.urls?.length ?? 0) > (dataA?.urls?.length ?? 0) ? b : a
+    }
+    if (aHit) return a
+    if (bHit) return b
+    // Neither is a positive hit — prefer whichever actually succeeded.
     return preferOk(a, b)
   }
 
@@ -522,8 +543,32 @@ export async function runLookup(
     const dataB = b.status === 'fulfilled' ? (b.value.data as ThreatFoxResult | null) : null
     const countA = dataA?.data?.length ?? 0
     const countB = dataB?.data?.length ?? 0
+
+    // Unequal counts — the higher count wins straightforwardly.
     if (countA !== countB) return countA > countB ? a : b
-    // Equal counts (including 0–0) — prefer whichever actually succeeded
+
+    // Equal non-zero counts — both paths may have *different* IOCs (e.g.
+    // the domain is listed under one ID and its resolved IP under another).
+    // Merge and deduplicate by IOC id so neither path's results are dropped.
+    if (countA > 0 && a.status === 'fulfilled' && b.status === 'fulfilled' && dataA !== null) {
+      const seen = new Set<string>()
+      const mergedIOCs = [...(dataA.data ?? []), ...(dataB?.data ?? [])].filter(ioc => {
+        if (seen.has(ioc.id)) return false
+        seen.add(ioc.id)
+        return true
+      })
+      return {
+        status: 'fulfilled' as const,
+        value: {
+          source:     'threatfox',
+          status:     a.value.status,
+          data:       { ...dataA, data: mergedIOCs } as ThreatFoxResult,
+          fetchedAt:  Date.now(),
+        } satisfies SourceResult<ThreatFoxResult>,
+      }
+    }
+
+    // Both have 0 IOCs — prefer whichever actually succeeded.
     return preferOk(a, b)
   }
 
@@ -533,9 +578,17 @@ export async function runLookup(
   ): PromiseSettledResult<SourceResult<MalwareBazaarResult>> {
     const dataA = a.status === 'fulfilled' ? (a.value.data as MalwareBazaarResult | null) : null
     const dataB = b.status === 'fulfilled' ? (b.value.data as MalwareBazaarResult | null) : null
-    if (dataA?.query_status === 'ok') return a
-    if (dataB?.query_status === 'ok') return b
-    // Neither is a positive hit — prefer whichever actually succeeded
+    const aHit = dataA?.query_status === 'ok'
+    const bHit = dataB?.query_status === 'ok'
+    // Both paths show hits — prefer whichever has more sample entries so we
+    // don't silently drop domain-path results when both paths return data.
+    // IP path (a) is the tiebreak when counts are equal.
+    if (aHit && bHit) {
+      return (dataB?.data?.length ?? 0) > (dataA?.data?.length ?? 0) ? b : a
+    }
+    if (aHit) return a
+    if (bHit) return b
+    // Neither is a positive hit — prefer whichever actually succeeded.
     return preferOk(a, b)
   }
 

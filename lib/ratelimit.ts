@@ -53,8 +53,10 @@ const RL_KV_PREFIX      = RATE_LIMIT.KV_PREFIX
  *
  * NOTE: The read-increment-write sequence is not atomic — concurrent requests
  * from the same IP may under-count usage, allowing slight quota overruns under
- * high parallelism. This is acceptable for a best-effort rate limiter; for
- * strict enforcement migrate to a Durable Object counter.
+ * high parallelism. Under the worst case the effective limit is approximately
+ * maxRequests × max_concurrent_workers_per_IP. This is acceptable for a
+ * best-effort rate limiter; for strict enforcement migrate to a Durable Object
+ * counter (Cloudflare Durable Objects provide serialised access per key).
  *
  * @param cost  Number of quota slots to consume (default 1). Used by batch
  *              routes to charge the full batch size in one call.
@@ -334,8 +336,9 @@ export interface ConcurrencyResult {
  *
  * NOTE: Like checkRateLimit, the read-increment-write is not atomic. Under
  * concurrent Workers the active count may be under-counted, allowing slightly
- * more than CC_MAX parallel requests. The KV TTL is a safety net. For strict
- * enforcement, migrate to a Durable Object.
+ * more than CC_MAX parallel requests at peak. Under the worst case the
+ * effective ceiling is CC_MAX + (number of concurrent Workers − 1). The KV
+ * TTL is a safety net. For strict enforcement, migrate to a Durable Object.
  *
  * IMPORTANT: callers MUST call releaseConcurrency() in a finally block to
  * avoid leaking slots.  The KV TTL is a safety net, not the primary release.

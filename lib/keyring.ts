@@ -62,13 +62,18 @@ export class KeyRing {
   }
 
   private exhaustedKey(key: string): string {
-    // Hash the raw key value so it doesn't appear verbatim in KV key names,
-    // which are visible in the Cloudflare dashboard and audit logs.
-    // We use a simple djb2 hash — it's fast, deterministic, and sufficient
-    // for a non-cryptographic KV namespace token.
+    // Hash the key's *index* in the ring rather than its raw value so that:
+    //   1. The API key never appears verbatim in KV key names (which are
+    //      visible in the Cloudflare dashboard and audit logs).
+    //   2. Each index maps to a unique token — a djb2 collision between two
+    //      raw key strings could cross-exhaust unrelated keys, but indices
+    //      are always distinct small integers so their hashes never collide
+    //      in practice for realistic ring sizes (≤ 18 keys).
+    const index = this.keys.indexOf(key)
+    const input = index >= 0 ? String(index) : key  // fallback: hash raw value
     let h = 5381
-    for (let i = 0; i < key.length; i++) {
-      h = ((h << 5) + h) ^ key.charCodeAt(i)
+    for (let i = 0; i < input.length; i++) {
+      h = ((h << 5) + h) ^ input.charCodeAt(i)
     }
     const token = (h >>> 0).toString(16).padStart(8, '0')
     return `keyring:${this.source}:exhausted:${token}`

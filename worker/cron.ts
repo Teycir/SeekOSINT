@@ -284,21 +284,18 @@ export default {
           }
         }
 
-        // Persist fresh snapshot — wrap in waitUntil so a Worker termination
-        // just before the write completes doesn't silently lose the snapshot.
-        await new Promise<void>((resolve) => {
-          ctx.waitUntil(
-            updateTargetSnapshot(env.DB, target.id, nextJson)
-              .then(() => {
-                console.log(`[cron] updated snapshot for ${target.query}`)
-                resolve()
-              })
-              .catch(writeErr => {
-                console.error(`[cron] failed to persist snapshot for ${target.query}`, writeErr)
-                resolve()  // resolve anyway so the loop continues
-              }),
-          )
-        })
+        // Persist the fresh snapshot synchronously so the next loop iteration
+        // always has an up-to-date baseline to diff against.  ctx.waitUntil is
+        // intentionally NOT used here — it is designed to extend lifetime past
+        // a *response flush*, not to block sequential execution within a cron
+        // handler, and wrapping an await inside waitUntil can silently lose the
+        // write if the Worker terminates before the deferred task drains.
+        try {
+          await updateTargetSnapshot(env.DB, target.id, nextJson)
+          console.log(`[cron] updated snapshot for ${target.query}`)
+        } catch (writeErr) {
+          console.error(`[cron] failed to persist snapshot for ${target.query}`, writeErr)
+        }
       } catch (err) {
         console.error(`[cron] lookup failed for ${target.query}`, err)
       }

@@ -29,10 +29,14 @@ export function sanitizeString(input: string, maxLength = 1000): string {
 /**
  * Sanitize a label/name field (alphanumeric + common punctuation only).
  * Used for target labels, notes, etc.
+ *
+ * Single and double quotes are intentionally excluded: labels have no
+ * legitimate need for unescaped quotes and they are a latent SQL/template
+ * injection risk if labels are ever interpolated into a query or template.
  */
 export function sanitizeLabel(input: string, maxLength = 200): string {
   return sanitizeString(input, maxLength)
-    .replace(/[^\w\s\-_.,:;!?()\[\]{}'"@#$%&+=]/g, '')  // allow common punctuation
+    .replace(/[^\w\s\-_.,:;!?()\[\]{}@#$%&+=]/g, '')  // quotes excluded — see above
 }
 
 /**

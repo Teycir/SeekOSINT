@@ -194,18 +194,22 @@ export function diffHostResults(prev: HostResult, next: HostResult): TargetDiff 
   // ── Certificate expiry ────────────────────────────────────────────────────
 
   // Surface certs expiring soon (≤ CERT_EXPIRY_WARN_DAYS) or already expired.
-  // Compare against the previous snapshot's notAfter for the same commonName —
-  // only fire if the cert was NOT already flagged as near-expiry in the previous
-  // check, to avoid re-alerting every hour on a known-expiring cert.
+  // Key by serialNumber (unique per certificate lifetime) so that a renewed
+  // cert — which shares its commonName with the old cert but has a new serial
+  // and a new notAfter — is never suppressed because the previous snapshot
+  // contained a cert with the same CN already in the warning window.
+  // Fallback key: `${commonName}::${notAfter}` for any cert where serialNumber
+  // is unexpectedly absent (shouldn't occur with crt.sh data, but defensive).
   const prevCertExpiry = new Map(
     (ok(prev.core.certs) ? prev.core.certs.data : [])
-      ?.map(c => [c.commonName, daysUntil(c.notAfter)]) ?? [],
+      ?.map(c => [c.serialNumber || `${c.commonName}::${c.notAfter}`, daysUntil(c.notAfter)]) ?? [],
   )
   const nextCerts = ok(next.core.certs) ? (next.core.certs.data ?? []) : []
   for (const cert of nextCerts) {
     const days = daysUntil(cert.notAfter)
     if (days <= CERT_EXPIRY_WARN_DAYS) {
-      const prevDays = prevCertExpiry.get(cert.commonName)
+      const certKey = cert.serialNumber || `${cert.commonName}::${cert.notAfter}`
+      const prevDays = prevCertExpiry.get(certKey)
       // Alert if: cert is new (wasn't in prev), OR was previously outside the
       // warning window and has now crossed into it (transition alert only).
       const wasAlreadyWarned = prevDays !== undefined && prevDays <= CERT_EXPIRY_WARN_DAYS
