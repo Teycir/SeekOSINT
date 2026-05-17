@@ -20,7 +20,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "seek-osint",
+      "database_name": "seekyou",
       "database_id": "7229602c-e1a3-440e-82f8-1b7912eed83a"
     }
   ],

@@ -14,9 +14,9 @@ export function Footer() {
             <span>•</span>
             <a href="/faq" className="hover:text-neon-red transition-colors">FAQ</a>
             <span>•</span>
-            <a href="https://github.com/teycir/SeekOSINT" target="_blank" rel="noopener noreferrer" className="hover:text-neon-red transition-colors">GitHub</a>
+            <a href="https://github.com/teycir/SeekYou" target="_blank" rel="noopener noreferrer" className="hover:text-neon-red transition-colors">GitHub</a>
             <span>•</span>
-            <a href="https://github.com/teycir/SeekOSINT/blob/master/LICENSE.md" target="_blank" rel="noopener noreferrer" className="hover:text-neon-red transition-colors">License</a>
+            <a href="https://github.com/teycir/SeekYou/blob/master/LICENSE.md" target="_blank" rel="noopener noreferrer" className="hover:text-neon-red transition-colors">License</a>
           </div>
         </div>
         <div className="flex gap-3 items-center">

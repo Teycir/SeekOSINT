@@ -1,4 +1,4 @@
-# SeekOSINT
+# SeekYou
 
 > **Free-tier OSINT intelligence on any IP, domain, or ASN**
 

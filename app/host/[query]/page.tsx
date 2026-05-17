@@ -37,14 +37,14 @@ export async function generateMetadata({
     description,
     alternates: { canonical: url },
     openGraph: {
-      title: `${decoded} — SeekOSINT`,
+      title: `${decoded} — SeekYou`,
       description,
       url,
       type: 'article',
     },
     twitter: {
       card: 'summary',
-      title: `${decoded} — SeekOSINT`,
+      title: `${decoded} — SeekYou`,
       description,
     },
     // Result pages are live data — don't let search engines cache stale snapshots
@@ -784,7 +784,7 @@ export default async function HostPage({
             <ShareButton query={result.query.normalised} />
             <ExportButton
               resultJson={JSON.stringify(result, null, 2)}
-              filename={`seekosint-${result.query.normalised}.json`}
+              filename={`seekyou-${result.query.normalised}.json`}
             />
             <RefreshButton query={result.query.normalised} />
             <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">

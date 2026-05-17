@@ -1,4 +1,4 @@
-# SeekOSINT — Roadmap
+# SeekYou — Roadmap
 
 > Last updated: 16 May 2026 (pipeline logic audit added)
 

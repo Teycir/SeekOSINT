@@ -68,7 +68,7 @@ export default function HomePage() {
         <div className="space-y-2 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-neon-red glow-text pulse-glow font-mono">
             <DecryptedText
-              text="seekosint"
+              text="seekyou"
               speed={30}
               maxIterations={8}
               animateOn="view"

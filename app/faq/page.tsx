@@ -8,13 +8,13 @@ import { FAQContent } from '../components/FAQContent'
 export const metadata: Metadata = {
   title: 'FAQ',
   description:
-    'Frequently asked questions about SeekOSINT — IP lookup, domain intelligence, ' +
+    'Frequently asked questions about SeekYou — IP lookup, domain intelligence, ' +
     'ASN lookup, rate limits, privacy, self-hosting, and data sources.',
   alternates: { canonical: 'https://seekyou.workers.dev/faq' },
   openGraph: {
-    title: 'SeekOSINT FAQ',
+    title: 'SeekYou FAQ',
     description:
-      'Everything you need to know about SeekOSINT — how it works, what sources ' +
+      'Everything you need to know about SeekYou — how it works, what sources ' +
       'it queries, rate limits, privacy, and self-hosting.',
     url: 'https://seekyou.workers.dev/faq',
   },

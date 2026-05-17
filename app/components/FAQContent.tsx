@@ -26,8 +26,8 @@ export function FAQContent() {
         <Card className="p-4 sm:p-6 md:p-8 space-y-6">
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">What input formats does SeekOSINT accept?</h2>
-            <p className="text-neon-red/60 text-sm mb-2">SeekOSINT automatically detects and normalises:</p>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">What input formats does SeekYou accept?</h2>
+            <p className="text-neon-red/60 text-sm mb-2">SeekYou automatically detects and normalises:</p>
             <ul className="list-disc list-inside ml-4 space-y-1 text-xs text-neon-red/60">
               <li><strong className="text-neon-red">IPv4:</strong> plain dotted-decimal, e.g. <code>1.1.1.1</code></li>
               <li><strong className="text-neon-red">IPv6:</strong> full or compressed notation, e.g. <code>2606:4700:4700::1111</code></li>
@@ -37,18 +37,18 @@ export function FAQContent() {
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">How many sources does SeekOSINT query?</h2>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">How many sources does SeekYou query?</h2>
             <p className="text-neon-red/60 text-sm">Up to 15, depending on query type. All sources are queried in parallel — the page renders results as each source responds rather than waiting for all to finish.</p>
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Does SeekOSINT actively scan targets?</h2>
-            <p className="text-neon-red/60 text-sm">No. SeekOSINT is entirely <strong className="text-neon-red">passive</strong>. It only queries existing public databases and APIs. No packets are sent to the target host.</p>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Does SeekYou actively scan targets?</h2>
+            <p className="text-neon-red/60 text-sm">No. SeekYou is entirely <strong className="text-neon-red">passive</strong>. It only queries existing public databases and APIs. No packets are sent to the target host.</p>
           </div>
 
           <div>
             <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Are my queries logged?</h2>
-            <p className="text-neon-red/60 text-sm">SeekOSINT stores only anonymous recent-search query strings (not IPs) for the homepage recent-searches widget. No user identity is tracked. Upstream APIs may log queries on their end per their own privacy policies.</p>
+            <p className="text-neon-red/60 text-sm">SeekYou stores only anonymous recent-search query strings (not IPs) for the homepage recent-searches widget. No user identity is tracked. Upstream APIs may log queries on their end per their own privacy policies.</p>
           </div>
 
           <div>
@@ -72,13 +72,13 @@ export function FAQContent() {
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Is SeekOSINT open source?</h2>
-            <p className="text-neon-red/60 text-sm">Yes. The source is available on <a href="https://github.com/teycir/SeekOSINT" target="_blank" rel="noopener noreferrer" className="underline hover:text-neon-red">GitHub</a> under the project license. Contributions, bug reports, and source suggestions are welcome.</p>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Is SeekYou open source?</h2>
+            <p className="text-neon-red/60 text-sm">Yes. The source is available on <a href="https://github.com/teycir/SeekYou" target="_blank" rel="noopener noreferrer" className="underline hover:text-neon-red">GitHub</a> under the project license. Contributions, bug reports, and source suggestions are welcome.</p>
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Is it legal to use SeekOSINT?</h2>
-            <p className="text-neon-red/60 text-sm">SeekOSINT only queries public data sources — there is no active probing. However, you are responsible for complying with the terms of service of each underlying source and the laws of your jurisdiction. Only investigate hosts you own or have explicit authorisation to investigate.</p>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Is it legal to use SeekYou?</h2>
+            <p className="text-neon-red/60 text-sm">SeekYou only queries public data sources — there is no active probing. However, you are responsible for complying with the terms of service of each underlying source and the laws of your jurisdiction. Only investigate hosts you own or have explicit authorisation to investigate.</p>
           </div>
 
           <div>
@@ -87,12 +87,12 @@ export function FAQContent() {
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Can I use SeekOSINT programmatically?</h2>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">Can I use SeekYou programmatically?</h2>
             <p className="text-neon-red/60 text-sm">The worker exposes a JSON API at <code className="text-neon-red/80">/api/lookup?q=&lt;target&gt;</code>. Self-host your own instance for higher throughput and direct API access without rate limits.</p>
           </div>
 
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">How do I self-host SeekOSINT?</h2>
+            <h2 className="text-base sm:text-lg font-bold text-neon-red mb-2">How do I self-host SeekYou?</h2>
             <ul className="list-disc list-inside ml-4 space-y-1 text-xs text-neon-red/60">
               <li>Clone the repo from GitHub</li>
               <li>Copy <code className="text-neon-red/80">.env.example</code> → <code className="text-neon-red/80">.env</code> and fill in your API keys</li>

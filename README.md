@@ -18,7 +18,7 @@ _Scan the QR code or copy the wallet address above._
 <!-- donation:eth:end -->
 
 
-# SeekOSINT
+# SeekYou
 
 > **Unified host intelligence across 15 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
@@ -43,9 +43,9 @@ $ curl "https://seekyou.workers.dev/api/lookup?q=1.1.1.1"
 
 ## Table of Contents
 
-- [SeekOSINT](#seekosint)
+- [SeekYou](#seekyou)
   - [Table of Contents](#table-of-contents)
-  - [What SeekOSINT does](#what-seekosint-does)
+  - [What SeekYou does](#what-seekyou-does)
   - [Use cases](#use-cases)
   - [Lawful-use policy](#lawful-use-policy)
   - [Related Tools](#related-tools)
@@ -88,9 +88,9 @@ $ curl "https://seekyou.workers.dev/api/lookup?q=1.1.1.1"
 
 ---
 
-## What SeekOSINT does
+## What SeekYou does
 
-SeekOSINT is a **host intelligence tool** — paste in an IP address, domain name, or ASN and get a unified report covering:
+SeekYou is a **host intelligence tool** — paste in an IP address, domain name, or ASN and get a unified report covering:
 
 | Category | What you get |
 |---|---|
@@ -123,7 +123,7 @@ Every source is queried in parallel. A failing source degrades to an "unavailabl
 
 ## Lawful-use policy
 
-SeekOSINT is designed for **lawful security research, network operations, and threat intelligence**. By using this tool, you agree to:
+SeekYou is designed for **lawful security research, network operations, and threat intelligence**. By using this tool, you agree to:
 
 **Permitted uses:**
 - Security operations and incident response on networks you own or are authorized to monitor
@@ -150,13 +150,13 @@ SeekOSINT is designed for **lawful security research, network operations, and th
 **Disclaimer:**
 The author and contributors assume no liability for misuse of this tool. Users are solely responsible for ensuring their activities comply with applicable laws. Data aggregated from public sources may be incomplete, outdated, or inaccurate — always verify findings through authoritative channels before taking action.
 
-If you discover a vulnerability through SeekOSINT, follow responsible disclosure practices and notify the affected party before public disclosure.
+If you discover a vulnerability through SeekYou, follow responsible disclosure practices and notify the affected party before public disclosure.
 
 ---
 
 ## Related Tools
 
-SeekOSINT is part of a privacy-focused security toolkit. Explore the full suite:
+SeekYou is part of a privacy-focused security toolkit. Explore the full suite:
 
 | Tool | Description | Live URL |
 |---|---|---|
@@ -165,7 +165,7 @@ SeekOSINT is part of a privacy-focused security toolkit. Explore the full suite:
 | **GhostChat** | Ephemeral encrypted messaging — self-destructing conversations with no server logs | [ghost-chat.pages.dev](https://ghost-chat.pages.dev) |
 | **XMRProof** | Monero payment verification — generate cryptographic proofs of XMR transactions | [xmrproof.pages.dev](https://xmrproof.pages.dev) |
 | **GhostReceipt** | Anonymous receipt generation — create verifiable transaction records without identity exposure | [ghostreceipt.pages.dev](https://ghostreceipt.pages.dev) |
-| **SeekOSINT** | Host intelligence aggregator — unified OSINT across 15 sources for IPs, domains, and ASNs | [seekyou.workers.dev](https://seekyou.workers.dev) |
+| **SeekYou** | Host intelligence aggregator — unified OSINT across 15 sources for IPs, domains, and ASNs | [seekyou.workers.dev](https://seekyou.workers.dev) |
 | **HoneypotScan** | Honeypot detection service — identify decoy systems and avoid false positives in security research | [honeypotscan.pages.dev](https://honeypotscan.pages.dev) |
 
 All tools run on Cloudflare's edge network with privacy-first design principles.
@@ -225,7 +225,7 @@ Browser / curl
                │
                ▼
 ┌─────────────────────────────────────┐
-│  seekosint-cron (Worker)            │
+│  seekyou-cron (Worker)            │
 │  wrangler.cron.toml                 │
 │  • hourly blocklist refresh         │
 │  • hourly saved-target re-query     │
@@ -271,7 +271,7 @@ Force-refresh any query with `?refresh=1` to bypass the KV cache and pull live d
 ## Project structure
 
 ```
-SeekOSINT/
+SeekYou/
 ├── app/
 │   ├── page.tsx                      # Homepage — search form + recent searches
 │   ├── layout.tsx                    # Root layout
@@ -463,7 +463,7 @@ curl -X POST https://seekyou.workers.dev/api/admin/reset-breaker \
 
 ## Key rotation — GrayHatWarfare
 
-GrayHatWarfare allows 100 requests/day per API key. SeekOSINT rotates across up to 18 keys for an effective 1,800 requests/day:
+GrayHatWarfare allows 100 requests/day per API key. SeekYou rotates across up to 18 keys for an effective 1,800 requests/day:
 
 ```typescript
 // lib/keyring.ts — round-robin across keys with remaining quota
@@ -508,7 +508,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_targets_created
 ### Apply schema
 
 ```bash
-wrangler d1 execute seek-osint --file=schema.sql
+wrangler d1 execute seekyou --file=schema.sql
 ```
 
 ### Helper functions
@@ -622,8 +622,8 @@ wrangler secret put WEBHOOK_URL --config wrangler.cron.toml  # optional — fire
 ### Local development
 
 ```bash
-git clone https://github.com/Teycir/SeekOSINT
-cd SeekOSINT
+git clone https://github.com/Teycir/SeekYou
+cd SeekYou
 npm install
 
 # Copy example env — fill in your keys
@@ -642,10 +642,10 @@ The app is available at `http://localhost:3000`. In local dev, KV and D1 use Wra
 wrangler kv namespace create KV
 
 # Create D1 database — copy the ID into wrangler.toml
-wrangler d1 create seek-osint
+wrangler d1 create seekyou
 
 # Apply schema
-wrangler d1 execute seek-osint --file=schema.sql
+wrangler d1 execute seekyou --file=schema.sql
 ```
 
 ---
@@ -670,7 +670,7 @@ wrangler deploy --config wrangler.cron.toml
 ### Wrangler configuration (`wrangler.toml`)
 
 ```toml
-name = "seekosint"
+name = "seekyou"
 pages_build_output_dir = ".open-next"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
@@ -681,7 +681,7 @@ id = "<your-kv-id>"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "seek-osint"
+database_name = "seekyou"
 database_id = "<your-d1-id>"
 ```
 
@@ -736,7 +736,7 @@ Tests use Vitest. See `vitest.config.ts`.
 
 ## Cloudflare free-tier limits
 
-| Service | Free allowance | Estimated SeekOSINT usage |
+| Service | Free allowance | Estimated SeekYou usage |
 |---|---|---|
 | Pages builds | 500/month | ~10 deploys/month |
 | Workers requests | 100k/day | ~5k lookups/day |

@@ -28,10 +28,10 @@ export function AboutContent() {
 
         <Card className="p-4 sm:p-6 md:p-8 space-y-6">
           <h2 className="text-xl sm:text-2xl font-bold text-neon-red mb-4 flex items-center gap-2">
-            <Search className="w-6 h-6" /> What is SeekOSINT?
+            <Search className="w-6 h-6" /> What is SeekYou?
           </h2>
           <p className="text-neon-red/60 text-sm leading-relaxed">
-            SeekOSINT is a free, open-source OSINT (Open Source Intelligence) tool that aggregates
+            SeekYou is a free, open-source OSINT (Open Source Intelligence) tool that aggregates
             host data from 15 different intelligence sources into a single, unified view. Enter any
             IP address, domain name, or ASN and get a comprehensive threat and infrastructure
             profile instantly — no sign-up required.
@@ -54,7 +54,7 @@ export function AboutContent() {
             </div>
             <div>
               <p className="text-neon-red font-bold mb-2">2. Hit Look up</p>
-              <p>SeekOSINT validates your input and routes you to a results page. Queries are
+              <p>SeekYou validates your input and routes you to a results page. Queries are
               normalised automatically — no need to strip <code className="text-neon-red/80">http://</code> or trailing slashes.</p>
             </div>
             <div>
@@ -71,7 +71,7 @@ export function AboutContent() {
             <Globe className="w-6 h-6" /> Intelligence Sources
           </h2>
           <p className="text-neon-red/60 text-sm leading-relaxed mb-4">
-            SeekOSINT queries up to 15 sources depending on query type. Not all sources support all query types.
+            SeekYou queries up to 15 sources depending on query type. Not all sources support all query types.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-neon-red/60">
             <div>
@@ -149,7 +149,7 @@ export function AboutContent() {
             <Eye className="w-6 h-6" /> Rate Limits
           </h2>
           <p className="text-neon-red/60 text-sm leading-relaxed mb-2">
-            SeekOSINT enforces per-IP rate limiting to protect upstream API quotas:
+            SeekYou enforces per-IP rate limiting to protect upstream API quotas:
           </p>
           <ul className="text-neon-red/60 text-sm space-y-2 list-disc list-inside">
             <li><strong className="text-neon-red">500 requests / hour</strong> per IP — generous for research workflows</li>
@@ -163,7 +163,7 @@ export function AboutContent() {
             <GitBranch className="w-6 h-6" /> Self-Hosting
           </h2>
           <p className="text-neon-red/60 text-sm leading-relaxed mb-3">
-            SeekOSINT is open source. Deploy your own instance on Cloudflare Pages:
+            SeekYou is open source. Deploy your own instance on Cloudflare Pages:
           </p>
           <ul className="text-neon-red/60 text-sm space-y-2 list-disc list-inside">
             <li>Clone the repo and copy <code className="text-neon-red/80">.env.example</code> to <code className="text-neon-red/80">.env</code></li>

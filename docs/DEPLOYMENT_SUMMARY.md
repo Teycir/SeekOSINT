@@ -1,4 +1,4 @@
-# Deployment Summary — SeekOSINT
+# Deployment Summary — SeekYou
 
 **Date:** 2025-01-XX  
 **Deployment ID:** 43eab8c0  
