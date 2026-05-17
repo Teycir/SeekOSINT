@@ -80,30 +80,49 @@ export default function HomePage() {
         </div>
 
         {/* Form */}
-        <div className="space-y-3">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={e => {
-              setInput((e.target as HTMLInputElement).value)
-              setValidationError(null)
-            }}
-            onKeyDown={e => e.key === 'Enter' && !isSearching && handleSubmit(e as unknown as FormEvent)}
-            placeholder="8.8.8.8  ·  example.com  ·  AS15169"
-            disabled={isSearching}
-            className={`w-full rounded-lg border-2 bg-black/50 px-4 py-3 font-mono text-neon-red
-                        placeholder-neon-red/20 outline-none transition-all
-                        focus:border-neon-red focus:shadow-[0_0_15px_rgba(255,26,26,0.3)]
-                        ${validationError
-                          ? 'border-red-500/70 input-error'
-                          : 'border-neon-red/30 hover:border-neon-red/50'
-                        }`}
-            autoFocus
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-          />
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={e => {
+                setInput((e.target as HTMLInputElement).value)
+                setValidationError(null)
+              }}
+              onKeyDown={e => e.key === 'Enter' && !isSearching && handleSubmit(e as unknown as FormEvent)}
+              placeholder="8.8.8.8  ·  example.com  ·  AS15169"
+              disabled={isSearching}
+              className={`flex-1 rounded-lg border-2 bg-black/50 px-4 py-3 font-mono text-neon-red
+                          placeholder-neon-red/20 outline-none transition-all
+                          focus:border-neon-red focus:shadow-[0_0_15px_rgba(255,26,26,0.3)]
+                          ${validationError
+                            ? 'border-red-500/70 input-error'
+                            : 'border-neon-red/30 hover:border-neon-red/50'
+                          }`}
+              autoFocus
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+            <button
+              onClick={handleSubmit}
+              className="shrink-0 rounded-lg border-2 border-neon-red/50 bg-transparent px-5 py-3
+                         font-mono font-bold uppercase tracking-wider text-neon-red/70
+                         transition-all duration-300
+                         hover:border-neon-red hover:bg-neon-red/5 hover:text-neon-red
+                         hover:shadow-[0_0_20px_rgba(255,26,26,0.2)]
+                         active:scale-[0.98]
+                         disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSearching}
+            >
+              {isSearching ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neon-red/30 border-t-neon-red" />
+              ) : (
+                '→'
+              )}
+            </button>
+          </div>
 
           {validationError && (
             <p className="text-sm text-red-400 font-mono">{validationError}</p>
@@ -111,30 +130,9 @@ export default function HomePage() {
 
           {!validationError && !isSearching && (
             <p className="text-[10px] text-neon-red/20 font-mono text-right select-none">
-              press <kbd className="rounded border border-neon-red/20 px-1 py-0.5">/</kbd> to focus
+              press <kbd className="rounded border border-neon-red/20 px-1 py-0.5">/</kbd> to focus · enter to search
             </p>
           )}
-
-          <button
-            onClick={handleSubmit}
-            className="w-full rounded-lg border-2 border-neon-red/50 bg-transparent px-4 py-3
-                       font-mono font-bold uppercase tracking-wider text-neon-red/70
-                       transition-all duration-300
-                       hover:border-neon-red hover:bg-neon-red/5 hover:text-neon-red
-                       hover:shadow-[0_0_20px_rgba(255,26,26,0.2)]
-                       active:scale-[0.98]
-                       disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSearching}
-          >
-            {isSearching ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neon-red/30 border-t-neon-red" />
-                Searching…
-              </span>
-            ) : (
-              'Look up'
-            )}
-          </button>
         </div>
 
         {/* Sources hint */}
