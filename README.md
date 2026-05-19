@@ -39,6 +39,18 @@ $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
 }
 ```
 
+## Screenshots
+
+<div align="center">
+
+### Landing Page
+<img src="assets/landing-page.png" alt="SeekYou Landing Page" width="800" />
+
+### Results Page
+<img src="assets/results-page.png" alt="SeekYou Results Page" width="800" />
+
+</div>
+
 ---
 
 ## Table of Contents
