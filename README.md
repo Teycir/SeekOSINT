@@ -22,7 +22,7 @@ _Scan the QR code or copy the wallet address above._
 
 > **Unified host intelligence across 15 sources** — Query any IP, domain, or ASN for instant security posture, infrastructure details, and threat correlations. Runs entirely on the Cloudflare free tier.
 
-**Live at:** https://seekyou.seekyou.workers.dev
+**Live at:** swiy.co/seekyou
 
 ```
 $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
@@ -62,6 +62,10 @@ $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
 ## Table of Contents
 
 - [SeekYou](#seekyou)
+  - [Screenshots](#screenshots)
+    - [Landing Page](#landing-page)
+    - [Results Page](#results-page)
+    - [Demo](#demo)
   - [Table of Contents](#table-of-contents)
   - [What SeekYou does](#what-seekyou-does)
   - [Use cases](#use-cases)
@@ -87,6 +91,8 @@ $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
     - [Apply schema](#apply-schema)
     - [Helper functions](#helper-functions)
   - [Cron worker](#cron-worker)
+    - [Typed diff (`lib/diff.ts`)](#typed-diff-libdiffts)
+    - [Webhook payload](#webhook-payload)
   - [Development setup](#development-setup)
     - [Prerequisites](#prerequisites)
     - [Local development](#local-development)
