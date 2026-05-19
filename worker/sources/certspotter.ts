@@ -8,7 +8,7 @@
  * overlapping but not identical log sets, so merging them gives better
  * coverage — especially when crt.sh is rate-limiting or returning HTML.
  *
- * Endpoint: https://certspotter.api.sslmate.com/api/v1/issuances
+ * Endpoint: https://api.certspotter.com/v1/issuances
  *   ?domain=<domain>&include_subdomains=true&expand=dns_names&expand=issuer&expand=cert
  *
  * Auth:     none (free tier; add ?Authorization= header for paid tier)
@@ -51,7 +51,7 @@ export async function fetchCertSpotter(
 
   try {
     const url =
-      `https://certspotter.api.sslmate.com/api/v1/issuances` +
+      `https://api.certspotter.com/v1/issuances` +
       `?domain=${encodeURIComponent(query.normalised)}` +
       `&include_subdomains=true` +
       `&expand=dns_names` +

@@ -90,7 +90,7 @@ export const ALLOWED_HOSTS = new Set<string>([
   'crt.sh',
 
   // SSLMate CertSpotter — CT log fallback for when crt.sh is unavailable
-  'certspotter.api.sslmate.com',
+  'api.certspotter.com',
 
   // whoisjson.com — domain WHOIS JSON (free, no auth)
   'whoisjson.com',

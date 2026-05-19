@@ -45,7 +45,7 @@ interface RawCert {
  * Throws only on genuine network errors or non-recoverable HTTP failures.
  */
 async function fetchCerts(url: string): Promise<RawCert[]> {
-  const res = await safeFetch(url, { signal: AbortSignal.timeout(20000) })
+  const res = await safeFetch(url, { signal: AbortSignal.timeout(8000) })
 
   // 429 = rate limited — treat as empty, not an error (avoids tripping breaker)
   if (res.status === 429) {
