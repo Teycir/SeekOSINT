@@ -49,8 +49,6 @@ $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
 ### Results Page
 <img src="assets/results-page.png" alt="SeekYou Results Page" width="800" />
 
-### Results Page (cont.)
-<img src="assets/results-page-2.png" alt="SeekYou Results Page 2" width="800" />
 
 ### Demo
 <a href="https://www.youtube.com/watch?v=b86tAUUqd34">
