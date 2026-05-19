@@ -49,6 +49,7 @@ $ curl "https://seekyou.seekyou.workers.dev/api/lookup?q=1.1.1.1"
 
 ### Results Page
 <img src="assets/landing-page.png" alt="SeekYou Landing Page" width="800" />
+
 ### Demo
 <a href="https://www.youtube.com/watch?v=b86tAUUqd34">
   <img src="https://img.youtube.com/vi/b86tAUUqd34/maxresdefault.jpg" alt="SeekYou Demo" width="800" />
